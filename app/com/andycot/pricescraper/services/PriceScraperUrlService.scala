@@ -16,7 +16,7 @@ class PriceScraperUrlService {
   val database: MongoDatabase = mongoClient.getDatabase("andycot")
 
   val collection: MongoCollection[PriceScraperUrl] = database
-    .getCollection[PriceScraperUrl]("priceCrawlerUrls")
+    .getCollection[PriceScraperUrl]("priceScraperUrls")
     .withCodecRegistry(MongoCodec.getCodecRegistry)
 
   /**
@@ -29,27 +29,27 @@ class PriceScraperUrlService {
     * Generate a list of urls given a base url and the max page number.
     * The base url must contain the "page=..." string
     *
-    * @param priceCrawlerBaseUrl
+    * @param priceScraperBaseUrl
     * @param maxPageNumber
     * @return
     */
-  def generateAllUrls(priceCrawlerBaseUrl: PriceScraperUrl, priceCrawlerWebsites: Seq[PriceScraperWebsite], maxPageNumber: Int): List[String] = {
-    val priceCrawlerWebsite: Seq[PriceScraperWebsite] = priceCrawlerWebsites.filter(_.website == priceCrawlerBaseUrl.website)
+  def generateAllUrls(priceScraperBaseUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], maxPageNumber: Int): List[String] = {
+    val priceScraperWebsite: Seq[PriceScraperWebsite] = priceScraperWebsites.filter(_.website == priceScraperBaseUrl.website)
 
-    (1 to maxPageNumber).map(generateUrl(priceCrawlerBaseUrl, priceCrawlerWebsite)).toList
+    (1 to maxPageNumber).map(generateUrl(priceScraperBaseUrl, priceScraperWebsite)).toList
   }
 
   /**
     *
-    * @param priceCrawlerUrl
+    * @param priceScraperUrl
     * @param pageNumber
     * @return
     */
-  def generateUrl(priceCrawlerUrl: PriceScraperUrl, priceCrawlerWebsiteParameters: Seq[PriceScraperWebsite])(pageNumber: Int): String = {
+  def generateUrl(priceScraperUrl: PriceScraperUrl, priceScraperWebsiteParameters: Seq[PriceScraperWebsite])(pageNumber: Int): String = {
     val pageParameter: String = f"page=$pageNumber"
-    val parameters: Seq[PriceScraperWebsiteParameter] = priceCrawlerWebsiteParameters.flatMap(_.defaultUrlParameters) :+ PriceScraperWebsiteParameter(pageParameter, None)
+    val parameters: Seq[PriceScraperWebsiteParameter] = priceScraperWebsiteParameters.flatMap(_.defaultUrlParameters) :+ PriceScraperWebsiteParameter(pageParameter, None)
 
-    addUrlParameters(priceCrawlerUrl.url, toRegex(parameters))
+    addUrlParameters(priceScraperUrl.url, toRegex(parameters))
   }
 
   /**
