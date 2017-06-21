@@ -17,7 +17,7 @@ class PriceScraperAuctionService {
    *
    */
   val collection: MongoCollection[PriceScraperAuction] = database
-    .getCollection[PriceScraperAuction]("priceCrawlerAuctions")
+    .getCollection[PriceScraperAuction]("priceScraperAuctions")
     .withCodecRegistry(MongoCodec.getCodecRegistry)
 
   // TODO add an index --- collection.createIndex(Document("auctionId" -> 1, "unique" -> true))

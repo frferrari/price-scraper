@@ -12,6 +12,8 @@ case class PriceScraperAuction(auctionId: String,
                                website: String,
                                auctionUrl: String,
                                auctionTitle: String,
+                               auctionType: String,
+                               nrBids: Option[Int],
                                thumbnailUrl: String,
                                largeUrl: String,
                                itemPrice: PriceScraperItemPrice,
@@ -19,3 +21,8 @@ case class PriceScraperAuction(auctionId: String,
                                checkedAt: Option[Instant] = None,
                                checkedStatus: Option[Int] = None
                               )
+
+object PriceScraperAuction {
+  val AUCTION = "A"
+  val FIXED_PRICE = "F"
+}

@@ -5,7 +5,7 @@ import javax.inject.Inject
 
 import akka.stream.stage.{GraphStage, GraphStageLogic, OutHandler}
 import akka.stream.{Attributes, Outlet, SourceShape}
-import com.andycot.pricescraper.models.PriceScraperUrl
+import com.andycot.pricescraper.models.{PriceScraperUrl, PriceScraperWebsite}
 import com.andycot.pricescraper.services.PriceScraperUrlService
 import play.api.Logger
 
@@ -27,7 +27,7 @@ import scala.util.{Failure, Success, Try}
   * http://doc.akka.io/docs/akka/current/scala/stream/stream-customize.html#custom-processing-with-graphstage
   *
   */
-class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: PriceScraperUrlService, ec: ExecutionContext)
+class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: PriceScraperUrlService, priceScraperWebsites: Seq[PriceScraperWebsite], ec: ExecutionContext)
   extends GraphStage[SourceShape[PriceScraperUrl]] {
 
   val elapsedSecondsBetweenUpdates = 300
@@ -44,40 +44,49 @@ class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: Price
      * http://tech.measurence.com/2016/06/01/a-dive-into-akka-streams.html
      * https://groups.google.com/forum/#!msg/akka-user/fBkWg4gSwEI/uiC2j1U7AAAJ;context-place=msg/akka-user/XQo2G7_mTcQ/8JKrM_TnDgAJ
      */
-    private def safePushCB(withUpdate: Boolean) = getAsyncCallback[Try[Seq[PriceScraperUrl]]] {
+    private def safePushCallback(withUpdate: Boolean) = getAsyncCallback[Try[Seq[PriceScraperUrl]]] {
       case Success(urls) =>
+        Logger.info(s"The list of URLs contains ${urls.length} elements")
         if (withUpdate) {
           lastUpdate = Instant.now
           priceScraperUrls = urls
         }
-        pushNextUrl
+        pushNextUrl()
 
       case Failure(f) =>
-        Logger.error(s"Enable to update the priceScraperUrls", f)
+        Logger.error(s"Enable to fetch the priceScraperUrls", f)
         completeStage()
     }
 
-    private def pushNextUrl = {
-      val nextUrl = getNextUrl(priceScraperUrls)
-      push(out, nextUrl)
+    private def pushNextUrl(): Unit = {
+      getNextUrl(priceScraperUrls).fold(completeStage())(push(out, _))
     }
 
-    private def getNextUrl(urls: Seq[PriceScraperUrl]) = {
-      index = if (index >= urls.length - 1) 0 else index + 1
-      val nextUrl = urls(index)
-      nextUrl
+    private def getNextUrl(urls: Seq[PriceScraperUrl]): Option[PriceScraperUrl] = {
+      urls match {
+        case h :: t =>
+          index = if (index >= urls.length - 1) 0 else index + 1
+          Some(urls(index))
+
+        case _ =>
+          Logger.error("Empty URL list")
+          None
+      }
     }
 
     setHandler(out, new OutHandler {
       override def onPull(): Unit = {
         // Check if an update of the url list is needed
-        if (Instant.now.getEpochSecond - lastUpdate.getEpochSecond > elapsedSecondsBetweenUpdates) {
-          priceScraperUrlService.findPriceScraperUrls.onComplete(safePushCB(true).invoke)
+        if (needsUpdate(lastUpdate)) {
+          priceScraperUrlService.findPriceScraperUrlsAndParameters(priceScraperWebsites).onComplete(safePushCallback(true).invoke)
         } else {
-          // Not optimal: Future.fromTry(Try(priceScraperUrls)).onComplete(safePushCB(false).invoke)
-          pushNextUrl
+          pushNextUrl()
         }
       }
     })
+  }
+
+  def needsUpdate(lastUpdate: Instant): Boolean = {
+    Instant.now.getEpochSecond - lastUpdate.getEpochSecond > elapsedSecondsBetweenUpdates
   }
 }

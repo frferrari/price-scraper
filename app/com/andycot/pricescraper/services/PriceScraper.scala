@@ -6,6 +6,8 @@ import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpRequest
+import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.server.ContentNegotiator.Alternative.ContentType
 import akka.stream.scaladsl.{Flow, Framing, Source}
 import akka.stream._
 import akka.util.ByteString
@@ -81,14 +83,16 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       Flow[PriceScraperUrl].mapAsync[BasePriceScraperUrlWithHtmlContent](numberOfUrlsProcessedInParallel) { priceScraperUrl =>
         Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} url ${priceScraperUrl.url}")
 
-        val htmlContentF: Future[String] = Http().singleRequest(HttpRequest(uri = priceScraperUrl.url)).flatMap {
-          case res if res.status.isSuccess =>
-            res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
+        val htmlContentF: Future[String] =
+          Http().singleRequest(HttpRequest(uri = priceScraperUrl.url))
+            .flatMap {
+              case res if res.status.isSuccess =>
+                res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
 
-          case res =>
-            Logger.error(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
-            throw new ResourceUnavailable("sUnable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
-        }
+              case res =>
+                Logger.error(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
+                throw new ResourceUnavailable("sUnable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
+            }
 
         htmlContentF.map(htmlContent => priceScraperUrl -> htmlContent)
       }
@@ -116,17 +120,20 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
           priceScraperUrlContents
       }
 
-    //
-    //
-    //
-    val priceScraperUrlGraphStage: Graph[SourceShape[PriceScraperUrl], NotUsed] = new PriceScraperUrlGraphStage
-    val priceScraperUrlSource: Source[PriceScraperUrl, NotUsed] = Source.fromGraph(priceScraperUrlGraphStage)
+    /*
+     * Let's go scraping
+     */
+    priceScraperWebsiteService.findAll.map { implicit priceScraperWebsites =>
+      /*
+       * Flows & Custom Graph Stages
+       */
+      val priceScraperUrlGraphStage: Graph[SourceShape[PriceScraperUrl], NotUsed] = new PriceScraperUrlGraphStage
+      val priceScraperUrlsFlow: Source[PriceScraperUrl, NotUsed] = Source.fromGraph(priceScraperUrlGraphStage)
 
-    val priceScraperAuctionsGraphStage: PriceScraperAuctionsGraphStage = new PriceScraperAuctionsGraphStage
-    val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
+      val priceScraperAuctionsGraphStage: PriceScraperAuctionsGraphStage = new PriceScraperAuctionsGraphStage
+      val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
 
-    priceScraperWebsiteService.findAll.map { priceScraperWebsites =>
-      priceScraperUrlSource
+      priceScraperUrlsFlow
         .throttle(1, imNotARobot(30, 30), 1, ThrottleMode.Shaping)
         .via(getHtmlContentFromBaseUrl)
         .via(generatePagedUrlsFromBaseUrl(priceScraperWebsites))

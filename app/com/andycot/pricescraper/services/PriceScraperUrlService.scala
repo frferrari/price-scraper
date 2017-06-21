@@ -7,6 +7,7 @@ import play.api.Logger
 import scala.concurrent.Future
 import scala.util.matching.Regex
 import scala.util.{Failure, Success, Try}
+import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
   * Created by Francois FERRARI on 10/06/2017
@@ -24,6 +25,11 @@ class PriceScraperUrlService {
     * @return
     */
   def findPriceScraperUrls: Future[Seq[PriceScraperUrl]] = collection.find().toFuture()
+
+  def findPriceScraperUrlsAndParameters(priceScraperWebsites: Seq[PriceScraperWebsite]): Future[Seq[PriceScraperUrl]] =
+    collection.find().toFuture().map(_.map { priceScraperUrl =>
+      priceScraperUrl.copy(url = generateUrl(priceScraperUrl, priceScraperWebsites)(1))
+    })
 
   /**
     * Generate a list of urls given a base url and the max page number.
@@ -45,7 +51,7 @@ class PriceScraperUrlService {
     * @param pageNumber
     * @return
     */
-  def generateUrl(priceScraperUrl: PriceScraperUrl, priceScraperWebsiteParameters: Seq[PriceScraperWebsite])(pageNumber: Int): String = {
+  def generateUrl(priceScraperUrl: PriceScraperUrl, priceScraperWebsiteParameters: Seq[PriceScraperWebsite])(pageNumber: Int = 1): String = {
     val pageParameter: String = f"page=$pageNumber"
     val parameters: Seq[PriceScraperWebsiteParameter] = priceScraperWebsiteParameters.flatMap(_.defaultUrlParameters) :+ PriceScraperWebsiteParameter(pageParameter, None)
 

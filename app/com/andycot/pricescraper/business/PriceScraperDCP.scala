@@ -6,6 +6,7 @@ import com.andycot.pricescraper.models._
 import com.andycot.pricescraper.services.PriceScraperUrlService
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import org.jsoup.select.Elements
 import play.api.Logger
 
 import scala.annotation.tailrec
@@ -29,12 +30,13 @@ object PriceScraperDCP extends PriceScraperExtractor {
     "\u00a0\u20a4" -> "GBP"
   )
 
-  // Matches a price string like this one "6,00 €"
-  val priceCurrencyRegex =
-    """([0-9,.]+)(.*)""".r
+  val sellingTypeFixedPrice = "Prix fixe"
+  val sellingTypeBidsRegex = """([0-9]+).*""".r // Something like "1&nbsp;offre" or "3&nbsp;offres"
 
-  val auctionIdRegex =
-    """item-([0-9]+)""".r
+  // Matches a price string like this one "6,00 €" or "~ 6,00 €"
+  val priceCurrencyRegex = """.*([0-9,.]+)(.*)""".r
+
+  val auctionIdRegex = """item-([0-9]+)""".r
 
   override def extractAuctions(website: String, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
     @tailrec def extractAuction(elementsIterator: util.Iterator[Element], priceScraperAuctions: Seq[PriceScraperAuction] = Nil): Seq[PriceScraperAuction] = {
@@ -61,21 +63,34 @@ object PriceScraperDCP extends PriceScraperExtractor {
             val auctionUrl = itemFooterElement.select("a.item-link").attr("href").trim
             val itemPrice = itemFooterElement.select(".item-price").text().trim
 
-            if ( auctionId.length > 0 &&
-              auctionUrl.length > 0 &&
-              auctionTitle.length > 0 &&
-              thumbUrl.length > 0 &&
-              largeUrl.length > 0
-            ) {
-              getItemPrice(itemPrice) match {
-                case Success(priceScraperItemPrice) =>
-                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, website, auctionUrl, auctionTitle, thumbUrl, largeUrl, priceScraperItemPrice))
+            val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
+            val auctionTypeAndNrBids = Try(if (sellingType.text().contains(sellingTypeFixedPrice)) {
+              (PriceScraperAuction.FIXED_PRICE, None)
+            } else {
+              val sellingTypeBidsRegex(b) = sellingType.text()
+              (PriceScraperAuction.AUCTION, Some(b.toInt))
+            })
 
-                case Failure(_) =>
+            if ( auctionId.length > 0 && auctionUrl.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
+              (getItemPrice(itemPrice), auctionTypeAndNrBids) match {
+                case (Success(priceScraperItemPrice), Success((auctionType, nrBids))) =>
+                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, website, auctionUrl, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
+
+                case (Failure(f1), Failure(f2)) =>
+                  Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f1)
+                  Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f2)
+                  extractAuction(elementsIterator, priceScraperAuctions)
+
+                case (Failure(f1), Success(_)) =>
+                  Logger.error(s"Auction $auctionId failed to process itemPrice $itemPrice, skipping ...", f1)
+                  extractAuction(elementsIterator, priceScraperAuctions)
+
+                case (Success(_), Failure(f2)) =>
+                  Logger.error(s"Auction $auctionId failed to process auctionType/nrBids $sellingType, skipping ...", f2)
                   extractAuction(elementsIterator, priceScraperAuctions)
               }
             } else {
-              Logger.info(s"PriceCrawlerDCP.extractAuction auction $auctionId is missing some informations, skipping ...")
+              Logger.info(s"Auction $auctionId is missing some informations, skipping ...")
               extractAuction(elementsIterator, priceScraperAuctions)
             }
           }

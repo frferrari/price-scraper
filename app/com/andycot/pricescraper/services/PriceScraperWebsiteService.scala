@@ -17,7 +17,7 @@ class PriceScraperWebsiteService {
    *
    */
   val collection: MongoCollection[PriceScraperWebsite] = database
-    .getCollection[PriceScraperWebsite]("priceCrawlerWebsites")
+    .getCollection[PriceScraperWebsite]("priceScraperWebsites")
     .withCodecRegistry(MongoCodec.getCodecRegistry)
 
   /**
