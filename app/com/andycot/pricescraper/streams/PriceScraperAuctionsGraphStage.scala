@@ -124,6 +124,10 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.length == auctions.length && auctions.nonEmpty && !priceScraperWebsite.canSortByAuctionEndDate =>
         Logger.info(s"All the auctions are ALREADY recorded for $url, continuing with same base URL")
 
+        // To complete the stage in a clean way, we complete the downstream ONLY if there's NO remaining
+        // auctions in the queue to push downstream.
+        if (priceScraperAuctions.isEmpty) complete(out)
+
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.isEmpty =>
         val newAuctions = getNewAuctions(auctions, alreadyRecordedAuctions)
         Logger.info(s"${newAuctions.length} new auctions found for $url")
@@ -160,6 +164,10 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
         // Push one auction
         pushNextAuction()
+
+        // To complete the stage in a clean way, we complete the downstream ONLY if there's NO remaining
+        // auctions in the queue to push downstream.
+        if (priceScraperAuctions.isEmpty) complete(out)
 
       case Failure(f) =>
         // TODO refactor ???
