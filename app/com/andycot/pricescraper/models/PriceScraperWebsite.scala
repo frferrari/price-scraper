@@ -10,6 +10,7 @@ import org.mongodb.scala.bson.codecs.Macros
   */
 case class PriceScraperWebsite(website: String,
                                baseUrl: String,
+                               canSortByAuctionEndDate: Boolean,
                                defaultUrlParameters: Seq[PriceScraperWebsiteParameter],
                                created_at: Instant = Instant.now()
                               )

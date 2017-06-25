@@ -27,7 +27,9 @@ import scala.util.{Failure, Success, Try}
   * http://doc.akka.io/docs/akka/current/scala/stream/stream-customize.html#custom-processing-with-graphstage
   *
   */
-class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: PriceScraperUrlService, priceScraperWebsites: Seq[PriceScraperWebsite], ec: ExecutionContext)
+class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: PriceScraperUrlService,
+                                          priceScraperWebsites: Seq[PriceScraperWebsite],
+                                          ec: ExecutionContext)
   extends GraphStage[SourceShape[PriceScraperUrl]] {
 
   val elapsedSecondsBetweenUpdates = 300
