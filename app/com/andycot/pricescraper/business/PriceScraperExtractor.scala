@@ -12,7 +12,7 @@ import scala.util.Try
 trait PriceScraperExtractor {
   def extractAuctions(website: String, htmlContent: String): Future[Seq[PriceScraperAuction]]
 
-  def getPagedUrls(priceCrawlerUrl: PriceScraperUrl, priceCrawlerWebsites: Seq[PriceScraperWebsite], htmlContent: String)(implicit priceCrawlerUrlService: PriceScraperUrlService): Seq[String]
+  def getPagedUrls(priceCrawlerUrl: PriceScraperUrl, priceCrawlerWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[String]
 
   def getItemPrice(priceWithCurrency: String): Try[PriceScraperItemPrice]
 

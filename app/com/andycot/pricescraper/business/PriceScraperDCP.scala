@@ -4,6 +4,7 @@ import java.util
 
 import com.andycot.pricescraper.models._
 import com.andycot.pricescraper.services.PriceScraperUrlService
+import com.andycot.pricescraper.utils.PriceScraperUrlManager
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
@@ -108,20 +109,19 @@ object PriceScraperDCP extends PriceScraperExtractor {
     * @param priceScraperUrl
     * @param priceScraperWebsites
     * @param htmlContent
-    * @param priceScraperUrlService
+    * @param psum
     * @return
     */
-  override def getPagedUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], htmlContent: String)
-                           (implicit priceScraperUrlService: PriceScraperUrlService): Seq[String] = {
+  override def getPagedUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[String] = {
     val pageNumberRegex = """.*<a class="pag-number.*" href=".*">([0-9]+)</a>.*""".r
 
     pageNumberRegex.findAllIn(htmlContent).matchData.flatMap(_.subgroups).toList.lastOption match {
       case Some(lastPageNumber) =>
-        priceScraperUrlService.generateAllUrls(priceScraperUrl, priceScraperWebsites, lastPageNumber.toInt)
+        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsites, lastPageNumber.toInt)
 
       case None =>
         // Case when there's only one page of auctions for this category
-        priceScraperUrlService.generateAllUrls(priceScraperUrl, priceScraperWebsites, 1)
+        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsites, 1)
     }
   }
 

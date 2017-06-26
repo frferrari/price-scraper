@@ -6,10 +6,8 @@ import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpRequest
-import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.server.ContentNegotiator.Alternative.ContentType
-import akka.stream.scaladsl.{Flow, Framing, Source}
 import akka.stream._
+import akka.stream.scaladsl.{Flow, Framing, Source}
 import akka.util.ByteString
 import com.andycot.pricescraper.business.{PriceScraperDCP, ResourceUnavailable}
 import com.andycot.pricescraper.models.{PriceScraperAuction, PriceScraperUrl, PriceScraperUrlContent, PriceScraperWebsite}
@@ -17,10 +15,9 @@ import com.andycot.pricescraper.streams.{PriceScraperAuctionsGraphStage, PriceSc
 import play.api.Logger
 import play.api.inject.ApplicationLifecycle
 
+import scala.concurrent.duration.{FiniteDuration, _}
 import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
-import scala.concurrent.duration._
 
 /**
   * Created by Francois FERRARI on 20/06/2017
