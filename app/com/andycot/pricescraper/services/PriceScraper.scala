@@ -1,5 +1,6 @@
 package com.andycot.pricescraper.services
 
+import java.util
 import javax.inject._
 
 import akka.NotUsed
@@ -12,12 +13,17 @@ import akka.util.ByteString
 import com.andycot.pricescraper.business.{PriceScraperDCP, ResourceUnavailable}
 import com.andycot.pricescraper.models.{PriceScraperAuction, PriceScraperUrl, PriceScraperUrlContent, PriceScraperWebsite}
 import com.andycot.pricescraper.streams.{PriceScraperAuctionsGraphStage, PriceScraperUrlGraphStage}
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 import play.api.Logger
 import play.api.inject.ApplicationLifecycle
 
+import scala.annotation.tailrec
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 import scala.util.control.NonFatal
+import scala.util.matching.Regex
 
 /**
   * Created by Francois FERRARI on 20/06/2017
@@ -42,7 +48,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
     Future.successful(())
   }
 
-  startScraping
+  startScraping()
 
   /**
     *
@@ -71,6 +77,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
         allowTruncation = true)
 
     val numberOfUrlsProcessedInParallel = 1
+    val numberOfAuctionsFetchedInParallel = 2
 
     /**
       * Produces a list of URLs and their HTML content, this URLs are the base URLs where we can find
@@ -78,17 +85,17 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       */
     val getHtmlContentFromBaseUrl: Flow[PriceScraperUrl, BasePriceScraperUrlWithHtmlContent, NotUsed] =
       Flow[PriceScraperUrl].mapAsync[BasePriceScraperUrlWithHtmlContent](numberOfUrlsProcessedInParallel) { priceScraperUrl =>
-        Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} url ${priceScraperUrl.url}")
+        Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} url ${priceScraperUrl.uri}")
 
         val htmlContentF: Future[String] =
-          Http().singleRequest(HttpRequest(uri = priceScraperUrl.url))
+          Http().singleRequest(HttpRequest(uri = priceScraperUrl.uri))
             .flatMap {
               case res if res.status.isSuccess =>
                 res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
 
               case res =>
-                Logger.error(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
-                throw new ResourceUnavailable("sUnable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
+                Logger.error(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.uri} error ${res.status}")
+                throw new ResourceUnavailable(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.uri} error ${res.status}")
             }
 
         htmlContentF.map(htmlContent => priceScraperUrl -> htmlContent)
@@ -104,17 +111,40 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       */
     def generatePagedUrlsFromBaseUrl(priceScraperWebsites: Seq[PriceScraperWebsite]): Flow[BasePriceScraperUrlWithHtmlContent, Seq[PriceScraperUrlContent], NotUsed] =
       Flow[BasePriceScraperUrlWithHtmlContent].map {
-        // TODO other case ...
         case (priceScraperUrl, htmlContent) if priceScraperUrl.website == PriceScraperWebsite.DCP =>
           val priceScraperUrlContents = PriceScraperDCP.getPagedUrls(priceScraperUrl, priceScraperWebsites, htmlContent).foldLeft(Seq.empty[PriceScraperUrlContent]) {
-            case (acc, url) if acc.isEmpty =>
-              acc :+ PriceScraperUrlContent(priceScraperUrl.copy(url = url), Some(htmlContent))
+            case (acc, psu) if acc.isEmpty =>
+              acc :+ PriceScraperUrlContent(psu, Some(htmlContent))
 
-            case (acc, url) =>
-              acc :+ PriceScraperUrlContent(priceScraperUrl.copy(url = url), None)
+            case (acc, psu) =>
+              acc :+ PriceScraperUrlContent(psu, None)
           }
 
           priceScraperUrlContents
+
+        case _ =>
+          Nil
+      }
+
+    /**
+      * Fetches the content of auction pages and scraps informations to update the auction
+      */
+    val fetchAuctionInformations: Flow[PriceScraperAuction, PriceScraperAuction, NotUsed] =
+      Flow[PriceScraperAuction].mapAsync[PriceScraperAuction](numberOfAuctionsFetchedInParallel) { priceScraperAuction =>
+        Logger.info(s"Processing WEBSITE ${priceScraperAuction.website} auctionId ${priceScraperAuction.auctionId} url ${priceScraperAuction.auctionUrl}")
+
+        val htmlContentF: Future[String] =
+          Http().singleRequest(HttpRequest(uri = priceScraperAuction.auctionUrl))
+            .flatMap {
+              case res if res.status.isSuccess =>
+                res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
+
+              case res =>
+                Logger.error(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUrl} error ${res.status}")
+                throw new ResourceUnavailable(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUrl} error ${res.status}")
+            }
+
+        htmlContentF.map(extractAuctionInformations(priceScraperAuction))
       }
 
     /*
@@ -146,6 +176,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
           }
           auction
         }
+        .via(fetchAuctionInformations)
         .runForeach(printOut)
     }.recover {
       case NonFatal(e) =>
@@ -154,6 +185,84 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
 
     ()
   }
+
+  def extractAuctionInformations(priceScraperAuction: PriceScraperAuction)(htmlContent: String): PriceScraperAuction = {
+    Logger.info("==== htmlContent "+htmlContent.substring(0, 30))
+    val html = Jsoup.parse(htmlContent, priceScraperAuction.auctionUrl).select("body")
+    val startedAtInfo = html.select(".info-view") // .text().replaceAll("&nbsp;", "")
+    val soldAtInfo = html.select(".alert-info") // .text().replaceAll("&nbsp;", "")
+    val visitCountInfo = html.select(".visit-count") // .text().trim
+
+    Logger.info(s"startedAtInfo $startedAtInfo soldAtInfo $soldAtInfo visitCountInfo $visitCountInfo")
+
+    priceScraperAuction
+  }
+
+//    override def extractAuctions(website: String, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
+//      @tailrec def extractAuction(elementsIterator: util.Iterator[Element], priceScraperAuctions: Seq[PriceScraperAuction] = Nil): Seq[PriceScraperAuction] = {
+//        elementsIterator.hasNext match {
+//          case true =>
+//            val element: Element = elementsIterator.next()
+//            val imageContainer = element.select("div.item-content > div.image-container")
+//            val auctionIdRegex(auctionId) = element.attr("id")
+//
+//            if (imageContainer.select("a.img-view").hasClass("default-thumb")) {
+//              Logger.info(s"PriceCrawlerDCP.extractAuction auction $auctionId has no picture, skipping ...")
+//              extractAuction(elementsIterator, priceScraperAuctions)
+//            } else {
+//
+//              val auctionId = imageContainer.select("a.img-view").attr("data-item-id").trim
+//              val largeUrl = element.select("a.img-view").attr("href").trim
+//              //
+//              val imgThumbElement = imageContainer.select("img.image-thumb")
+//              val auctionTitle = imgThumbElement.attr("alt").trim
+//              val thumbUrl = imgThumbElement.attr("data-original").trim
+//
+//              //
+//              val itemFooterElement = element.select("div.item-content > div.item-footer")
+//              val auctionUrl = itemFooterElement.select("a.item-link").attr("href").trim
+//              val itemPrice = itemFooterElement.select(".item-price").text().trim
+//
+//              val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
+//              val auctionTypeAndNrBids = Try(if (sellingType.text().contains(sellingTypeFixedPrice)) {
+//                (PriceScraperAuction.FIXED_PRICE, None)
+//              } else {
+//                val sellingTypeBidsRegex(b) = sellingType.text()
+//                (PriceScraperAuction.AUCTION, Some(b.toInt))
+//              })
+//
+//              if ( auctionId.length > 0 && auctionUrl.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
+//                (getItemPrice(itemPrice), auctionTypeAndNrBids) match {
+//                  case (Success(priceScraperItemPrice), Success((auctionType, nrBids))) =>
+//                    extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, website, auctionUrl, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
+//
+//                  case (Failure(f1), Failure(f2)) =>
+//                    Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f1)
+//                    Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f2)
+//                    extractAuction(elementsIterator, priceScraperAuctions)
+//
+//                  case (Failure(f1), Success(_)) =>
+//                    Logger.error(s"Auction $auctionId failed to process itemPrice $itemPrice, skipping ...", f1)
+//                    extractAuction(elementsIterator, priceScraperAuctions)
+//
+//                  case (Success(_), Failure(f2)) =>
+//                    Logger.error(s"Auction $auctionId failed to process auctionType/nrBids $sellingType, skipping ...", f2)
+//                    extractAuction(elementsIterator, priceScraperAuctions)
+//                }
+//              } else {
+//                Logger.info(s"Auction $auctionId is missing some informations, skipping ...")
+//                extractAuction(elementsIterator, priceScraperAuctions)
+//              }
+//            }
+//
+//          case false =>
+//            priceScraperAuctions
+//        }
+//      }
+//
+//      extractAuction(Jsoup.parse(htmlContent).select(".item-gallery").iterator())
+//
+//  }
 
   /**
     *

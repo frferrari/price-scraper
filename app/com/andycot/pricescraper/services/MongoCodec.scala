@@ -19,7 +19,7 @@ object MongoCodec {
     Macros.createCodecProvider[PriceScraperItemPrice](),
     Macros.createCodecProvider[PriceScraperAuction](),
     Macros.createCodecProvider[PriceScraperUrl](),
-    Macros.createCodecProvider[PriceScraperWebsiteParameter](),
+    Macros.createCodecProvider[PriceScraperQueryParameter](),
     Macros.createCodecProvider[PriceScraperWebsite]()
   )
 

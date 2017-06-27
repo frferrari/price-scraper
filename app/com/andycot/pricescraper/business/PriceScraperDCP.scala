@@ -2,12 +2,11 @@ package com.andycot.pricescraper.business
 
 import java.util
 
+import akka.http.scaladsl.model.Uri
 import com.andycot.pricescraper.models._
-import com.andycot.pricescraper.services.PriceScraperUrlService
 import com.andycot.pricescraper.utils.PriceScraperUrlManager
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import org.jsoup.select.Elements
 import play.api.Logger
 
 import scala.annotation.tailrec
@@ -39,7 +38,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
   val auctionIdRegex = """item-([0-9]+)""".r
 
-  override def extractAuctions(website: String, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
+  override def extractAuctions(priceScraperWebsite: PriceScraperWebsite, uri: Uri, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
     @tailrec def extractAuction(elementsIterator: util.Iterator[Element], priceScraperAuctions: Seq[PriceScraperAuction] = Nil): Seq[PriceScraperAuction] = {
       elementsIterator.hasNext match {
         case true =>
@@ -75,7 +74,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
             if ( auctionId.length > 0 && auctionUrl.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
               (getItemPrice(itemPrice), auctionTypeAndNrBids) match {
                 case (Success(priceScraperItemPrice), Success((auctionType, nrBids))) =>
-                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, website, auctionUrl, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
+                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, priceScraperWebsite.website, auctionUrl, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
 
                 case (Failure(f1), Failure(f2)) =>
                   Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f1)
@@ -101,7 +100,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
       }
     }
 
-    extractAuction(Jsoup.parse(htmlContent).select(".item-gallery").iterator())
+    extractAuction(Jsoup.parse(htmlContent, uri.toString).select(".item-gallery").iterator())
   }
 
   /**
@@ -109,10 +108,9 @@ object PriceScraperDCP extends PriceScraperExtractor {
     * @param priceScraperUrl
     * @param priceScraperWebsites
     * @param htmlContent
-    * @param psum
     * @return
     */
-  override def getPagedUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[String] = {
+  override def getPagedUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[PriceScraperUrl] = {
     val pageNumberRegex = """.*<a class="pag-number.*" href=".*">([0-9]+)</a>.*""".r
 
     pageNumberRegex.findAllIn(htmlContent).matchData.flatMap(_.subgroups).toList.lastOption match {

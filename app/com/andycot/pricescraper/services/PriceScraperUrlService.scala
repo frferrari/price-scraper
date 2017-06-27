@@ -28,7 +28,9 @@ class PriceScraperUrlService @Inject()(psuc: MongoPriceScraperUrlCollection) {
     * @return
     */
   def findPriceScraperUrlsAndParameters(priceScraperWebsites: Seq[PriceScraperWebsite]): Future[Seq[PriceScraperUrl]] =
-    collection.find().toFuture().map(_.map { priceScraperUrl =>
-      priceScraperUrl.copy(url = PriceScraperUrlManager.generateUrl(priceScraperUrl, priceScraperWebsites)(1))
-    })
+    collection.find().toFuture().map {
+      _.flatMap { priceScraperUrl =>
+        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsites, 1)
+      }
+    }
 }

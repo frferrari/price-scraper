@@ -4,7 +4,7 @@ import javax.inject.Inject
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.HttpRequest
+import akka.http.scaladsl.model.{HttpRequest, Uri}
 import akka.stream.stage._
 import akka.stream.{ActorMaterializerSettings, _}
 import akka.util.ByteString
@@ -40,39 +40,39 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
       override def onPush(): Unit = {
 
         grab(in) match {
-          case PriceScraperUrlContent(PriceScraperUrl(website, url), Some(htmlContent)) =>
+          case PriceScraperUrlContent(PriceScraperUrl(website, uri), Some(htmlContent)) =>
             getPriceScraperWebsite(website) match {
               case Some(priceScraperWebsite) =>
-                Logger.info(s"Processing WEBSITE $website URL $url w/htmlContent")
+                Logger.info(s"Processing WEBSITE $website URL $uri w/htmlContent")
                 (for {
-                  auctions <- PriceScraperDCP.extractAuctions(website, htmlContent)
+                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, uri, htmlContent)
                   alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
-                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, url).invoke)
+                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, uri).invoke)
 
               case None =>
-                Logger.error(s"Unknown WEBSITE $website for URL $url w/htmlContent")
+                Logger.error(s"Unknown WEBSITE $website for URL $uri w/htmlContent")
                 pull(in)
             }
 
-          case PriceScraperUrlContent(PriceScraperUrl(website, url), None) =>
+          case PriceScraperUrlContent(PriceScraperUrl(website, uri), None) =>
             getPriceScraperWebsite(website) match {
               case Some(priceScraperWebsite) =>
-                Logger.info(s"Processing WEBSITE $website URL $url w/o htmlContent")
+                Logger.info(s"Processing WEBSITE $website URL $uri w/o htmlContent")
                 (for {
-                  htmlContent <- getHtmlContent(url)
-                  auctions <- PriceScraperDCP.extractAuctions(website, htmlContent)
+                  htmlContent <- getHtmlContent(uri)
+                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, uri, htmlContent)
                   alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
-                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, url).invoke)
+                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, uri).invoke)
 
               case None =>
-                Logger.error(s"Unknown WEBSITE $website for URL $url w/o htmlContent")
+                Logger.error(s"Unknown WEBSITE $website for URL $uri w/o htmlContent")
                 pull(in)
             }
         }
       }
 
       override def onPull(): Unit = {
-        // We pull(in) only if we have emptied the auctions queue, this way we process each url in "sequence"
+        // We pull(in) only if we have emptied the auctions queue, this way we process each uri in "sequence"
         if (!pushNextAuction() && !isClosed(in)) {
           pull(in)
         }
@@ -86,34 +86,34 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
     /**
       *
-      * @param url The url from which to grab the html content from
+      * @param uri The uri from which to grab the html content from
       * @return
       */
-    def getHtmlContent(url: String): Future[String] = {
-      Logger.info(s"Fetching $url")
+    def getHtmlContent(uri: Uri): Future[String] = {
+      Logger.info(s"Fetching $uri")
 
-      Http().singleRequest(HttpRequest(uri = url)).flatMap {
+      Http().singleRequest(HttpRequest(uri = uri)).flatMap {
         case res if res.status.isSuccess =>
           res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
 
         case res =>
-          Logger.error(s"Error fetching $url status ${res.status}")
-          throw new ResourceUnavailable(s"Error fetching $url status ${res.status}")
+          Logger.error(s"Error fetching $uri status ${res.status}")
+          throw new ResourceUnavailable(s"Error fetching $uri status ${res.status}")
       }
     }
 
     /**
       * http://blog.kunicki.org/blog/2016/07/20/implementing-a-custom-akka-streams-graph-stage/
       *
-      * @param url The url from which the html content was grabbed from, for debug purposes
+      * @param uri The uri from which the html content was grabbed from, for debug purposes
       * @return
       */
-    private def processHtmlContentCallback(priceScraperWebsite: PriceScraperWebsite, url: String) = getAsyncCallback[Try[(Seq[PriceScraperAuction], Seq[PriceScraperAuction])]] {
+    private def processHtmlContentCallback(priceScraperWebsite: PriceScraperWebsite, uri: Uri) = getAsyncCallback[Try[(Seq[PriceScraperAuction], Seq[PriceScraperAuction])]] {
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.length == auctions.length && auctions.nonEmpty && priceScraperWebsite.canSortByAuctionEndDate =>
-        Logger.info(s"All the auctions are ALREADY recorded for $url, skipping to next base URL")
+        Logger.info(s"All the auctions are ALREADY recorded for $uri, skipping to next base URL")
 
-        // All auctions are already recorded for the current url, so we don't need to process
-        // this url next pages (page n+1, page n+2, page n+3, ...)
+        // All auctions are already recorded for the current uri, so we don't need to process
+        // this uri next pages (page n+1, page n+2, page n+3, ...)
         // So we cancel the upstream thus putting the unprocessed urls to the bin.
         cancel(in)
 
@@ -122,13 +122,13 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
         if (priceScraperAuctions.isEmpty) complete(out)
 
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.length == auctions.length && auctions.nonEmpty && !priceScraperWebsite.canSortByAuctionEndDate =>
-        Logger.info(s"All the auctions are ALREADY recorded for $url, continuing with same base URL")
+        Logger.info(s"All the auctions are ALREADY recorded for $uri, continuing with same base URL")
 
         if (!hasBeenPulled(in)) pull(in)
 
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.isEmpty =>
         val newAuctions = getNewAuctions(auctions, alreadyRecordedAuctions)
-        Logger.info(s"${newAuctions.length} new auctions found for $url")
+        Logger.info(s"${newAuctions.length} new auctions found for $uri")
 
         // Queue the new auctions
         priceScraperAuctions ++= newAuctions
@@ -138,7 +138,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
       case Success((auctions, alreadyRecordedAuctions)) if priceScraperWebsite.canSortByAuctionEndDate =>
         val newAuctions = getNewAuctions(auctions, alreadyRecordedAuctions)
-        Logger.info(s"${newAuctions.length} new auctions found for $url")
+        Logger.info(s"${newAuctions.length} new auctions found for $uri")
 
         // Queue the new auctions
         priceScraperAuctions ++= newAuctions
@@ -155,7 +155,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
       case Success((auctions, alreadyRecordedAuctions)) if !priceScraperWebsite.canSortByAuctionEndDate =>
         val newAuctions = getNewAuctions(auctions, alreadyRecordedAuctions)
-        Logger.info(s"${newAuctions.length} new auctions found for $url")
+        Logger.info(s"${newAuctions.length} new auctions found for $uri")
 
         // Queue the new auctions
         priceScraperAuctions ++= newAuctions
@@ -167,7 +167,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
       case Failure(f) =>
         // TODO refactor ???
-        Logger.error(s"Error encountered while processing $url", f)
+        Logger.error(s"Error encountered while processing $uri", f)
     }
 
     /**

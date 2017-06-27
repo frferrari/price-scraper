@@ -17,6 +17,8 @@ case class PriceScraperAuction(auctionId: String,
                                thumbnailUrl: String,
                                largeUrl: String,
                                itemPrice: PriceScraperItemPrice,
+                               startedAt: Option[Instant] = None,
+                               soldAt: Option[Instant] = None,
                                createdAt: Instant = Instant.now(),
                                checkedAt: Option[Instant] = None,
                                checkedStatus: Option[Int] = None
