@@ -60,7 +60,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
             //
             val itemFooterElement = element.select("div.item-content > div.item-footer")
-            val auctionUrl = itemFooterElement.select("a.item-link").attr("href").trim
+            val auctionUri = Uri(itemFooterElement.select("a.item-link").attr("href").trim).resolvedAgainst(priceScraperWebsite.baseUri)
             val itemPrice = itemFooterElement.select(".item-price").text().trim
 
             val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
@@ -71,10 +71,10 @@ object PriceScraperDCP extends PriceScraperExtractor {
               (PriceScraperAuction.AUCTION, Some(b.toInt))
             })
 
-            if ( auctionId.length > 0 && auctionUrl.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
+            if ( auctionId.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
               (getItemPrice(itemPrice), auctionTypeAndNrBids) match {
                 case (Success(priceScraperItemPrice), Success((auctionType, nrBids))) =>
-                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, priceScraperWebsite.website, auctionUrl, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
+                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, priceScraperWebsite.website, auctionUri, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
 
                 case (Failure(f1), Failure(f2)) =>
                   Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f1)

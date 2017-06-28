@@ -6,12 +6,12 @@ import javax.inject._
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.HttpRequest
+import akka.http.scaladsl.model.{HttpRequest, Uri}
 import akka.stream._
 import akka.stream.scaladsl.{Flow, Framing, Source}
 import akka.util.ByteString
 import com.andycot.pricescraper.business.{PriceScraperDCP, ResourceUnavailable}
-import com.andycot.pricescraper.models.{PriceScraperAuction, PriceScraperUrl, PriceScraperUrlContent, PriceScraperWebsite}
+import com.andycot.pricescraper.models._
 import com.andycot.pricescraper.streams.{PriceScraperAuctionsGraphStage, PriceScraperUrlGraphStage}
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -20,7 +20,7 @@ import play.api.inject.ApplicationLifecycle
 
 import scala.annotation.tailrec
 import scala.concurrent.duration.{FiniteDuration, _}
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 import scala.util.control.NonFatal
 import scala.util.matching.Regex
@@ -46,6 +46,11 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
   appLifecycle.addStopHook { () =>
     // stopScraping -- KillSwitch
     Future.successful(())
+  }
+
+  priceScraperUrlService.createOne(PriceScraperUrl("mywebsite", Uri("http://www.delcampe.net"))).onComplete {
+    case Success(s) => Logger.info("=====> Success inserting url")
+    case Failure(f) => Logger.info("=====> Failure inserting url", f)
   }
 
   startScraping()
@@ -131,17 +136,17 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       */
     val fetchAuctionInformations: Flow[PriceScraperAuction, PriceScraperAuction, NotUsed] =
       Flow[PriceScraperAuction].mapAsync[PriceScraperAuction](numberOfAuctionsFetchedInParallel) { priceScraperAuction =>
-        Logger.info(s"Processing WEBSITE ${priceScraperAuction.website} auctionId ${priceScraperAuction.auctionId} url ${priceScraperAuction.auctionUrl}")
+        Logger.info(s"Processing WEBSITE ${priceScraperAuction.website} auctionId ${priceScraperAuction.auctionId} url ${priceScraperAuction.auctionUri}")
 
         val htmlContentF: Future[String] =
-          Http().singleRequest(HttpRequest(uri = priceScraperAuction.auctionUrl))
+          Http().singleRequest(HttpRequest(uri = priceScraperAuction.auctionUri))
             .flatMap {
               case res if res.status.isSuccess =>
                 res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
 
               case res =>
-                Logger.error(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUrl} error ${res.status}")
-                throw new ResourceUnavailable(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUrl} error ${res.status}")
+                Logger.error(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUri} error ${res.status}")
+                throw new ResourceUnavailable(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUri} error ${res.status}")
             }
 
         htmlContentF.map(extractAuctionInformations(priceScraperAuction))
@@ -161,13 +166,13 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
 
       priceScraperUrlsFlow
-        .throttle(1, imNotARobot(30, 30), 1, ThrottleMode.Shaping)
+//        .throttle(1, imNotARobot(30, 30), 1, ThrottleMode.Shaping)
         .via(getHtmlContentFromBaseUrl)
         .via(generatePagedUrlsFromBaseUrl(priceScraperWebsites))
         .flatMapConcat(urls =>
           Source
             .fromIterator(() => urls.toIterator)
-            .throttle(1, imNotARobot(10, 10), 1, ThrottleMode.Shaping)
+//            .throttle(1, imNotARobot(10, 10), 1, ThrottleMode.Shaping)
             .via(priceScraperAuctionsFlow)
         )
         .map { auction =>
@@ -187,8 +192,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
   }
 
   def extractAuctionInformations(priceScraperAuction: PriceScraperAuction)(htmlContent: String): PriceScraperAuction = {
-    Logger.info("==== htmlContent "+htmlContent.substring(0, 30))
-    val html = Jsoup.parse(htmlContent, priceScraperAuction.auctionUrl).select("body")
+    val html = Jsoup.parse(htmlContent).select("body")
     val startedAtInfo = html.select(".info-view") // .text().replaceAll("&nbsp;", "")
     val soldAtInfo = html.select(".alert-info") // .text().replaceAll("&nbsp;", "")
     val visitCountInfo = html.select(".visit-count") // .text().trim

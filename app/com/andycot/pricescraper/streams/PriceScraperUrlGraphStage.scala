@@ -88,6 +88,11 @@ class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: Price
     })
   }
 
+  /**
+    * Checks if we need to update to url list by reading from the database, based on an elapsed time
+    * @param lastUpdate The last time the url collection was fetched from the database
+    * @return
+    */
   def needsUpdate(lastUpdate: Instant): Boolean = {
     Instant.now.getEpochSecond - lastUpdate.getEpochSecond > elapsedSecondsBetweenUpdates
   }

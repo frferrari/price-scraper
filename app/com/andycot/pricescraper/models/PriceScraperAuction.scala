@@ -2,6 +2,7 @@ package com.andycot.pricescraper.models
 
 import java.time.Instant
 
+import akka.http.scaladsl.model.Uri
 import org.bson.codecs.configuration.CodecProvider
 import org.mongodb.scala.bson.codecs.Macros
 
@@ -10,7 +11,7 @@ import org.mongodb.scala.bson.codecs.Macros
   */
 case class PriceScraperAuction(auctionId: String,
                                website: String,
-                               auctionUrl: String,
+                               auctionUri: Uri,
                                auctionTitle: String,
                                auctionType: String,
                                nrBids: Option[Int],

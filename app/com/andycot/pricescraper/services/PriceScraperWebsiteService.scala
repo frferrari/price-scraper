@@ -21,12 +21,12 @@ class PriceScraperWebsiteService {
     .withCodecRegistry(MongoCodec.getCodecRegistry)
 
   /**
-    * Create a website
+    * Creates a website
     *
     * @return
     */
-  def createOne(priceCrawlerWebsite: PriceScraperWebsite): Future[Completed] =
-    collection.insertOne(priceCrawlerWebsite).head()
+  def createOne(priceScraperWebsite: PriceScraperWebsite): Future[Completed] =
+    collection.insertOne(priceScraperWebsite).head()
 
   /**
     * List all the websites
