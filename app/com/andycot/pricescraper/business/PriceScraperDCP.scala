@@ -1,5 +1,7 @@
 package com.andycot.pricescraper.business
 
+import java.time.{Instant, LocalDateTime, ZoneOffset}
+import java.time.format.DateTimeFormatter
 import java.util
 
 import akka.http.scaladsl.model.Uri
@@ -38,7 +40,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
   val auctionIdRegex = """item-([0-9]+)""".r
 
-  override def extractAuctions(priceScraperWebsite: PriceScraperWebsite, uri: Uri, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
+  override def extractAuctions(priceScraperWebsite: PriceScraperWebsite, url: String, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
     @tailrec def extractAuction(elementsIterator: util.Iterator[Element], priceScraperAuctions: Seq[PriceScraperAuction] = Nil): Seq[PriceScraperAuction] = {
       elementsIterator.hasNext match {
         case true =>
@@ -60,7 +62,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
             //
             val itemFooterElement = element.select("div.item-content > div.item-footer")
-            val auctionUri = Uri(itemFooterElement.select("a.item-link").attr("href").trim).resolvedAgainst(priceScraperWebsite.baseUri)
+            val auctionUri = Uri(itemFooterElement.select("a.item-link").attr("href").trim).resolvedAgainst(priceScraperWebsite.baseUrl)
             val itemPrice = itemFooterElement.select(".item-price").text().trim
 
             val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
@@ -74,7 +76,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
             if ( auctionId.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
               (getItemPrice(itemPrice), auctionTypeAndNrBids) match {
                 case (Success(priceScraperItemPrice), Success((auctionType, nrBids))) =>
-                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, priceScraperWebsite.website, auctionUri, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
+                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, priceScraperWebsite.website, auctionUri.toString, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
 
                 case (Failure(f1), Failure(f2)) =>
                   Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f1)
@@ -100,7 +102,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
       }
     }
 
-    extractAuction(Jsoup.parse(htmlContent, uri.toString).select(".item-gallery").iterator())
+    extractAuction(Jsoup.parse(htmlContent, url).select(".item-gallery").iterator())
   }
 
   /**
@@ -149,4 +151,49 @@ object PriceScraperDCP extends PriceScraperExtractor {
     * @return
     */
   override def mapToInternalCurrency(externalCurrency: String): Option[String] = currencyMap.get(externalCurrency.trim)
+
+  /**
+    *
+    * @param priceScraperAuction
+    * @param htmlContent
+    * @return
+    */
+  override def extractAuctionInformations(priceScraperAuction: PriceScraperAuction, htmlContent: String): PriceScraperAuction = Try {
+    val html = Jsoup.parse(htmlContent).select("body")
+
+    // Début de la vente : jeudi 22 juin 2017 à 13:55 15 visites
+    val startedAtInfo = html.select(".info-view").text.replace("&nbsp;", " ").trim
+    Logger.info(s"startedAtInfo [$startedAtInfo]")
+    val startedAtRegex = ".*vente[^A-Za-z]+([A-Za-z]+ [0-9]+ [A-Za-z]+ [0-9]+).*([0-9]{2}:[0-9]{2}) ([0-9]+) visites".r
+    val startedAtRegex(startedAtDay, startedAtTime, visitCount) = startedAtInfo
+    val startedAtText = s"$startedAtDay $startedAtTime"
+    val startedAt = toInstant(startedAtText)
+
+    // Vendue le vendredi 23 juin 2017 20:06
+    val soldAtInfo = html.select(".alert-info").text().replaceAll("&nbsp;", " ").trim
+    val soldAtRegex = "Vendue le ([A-ZA-z]+ [0-9]+ [A-ZA-z]+ [0-9]{4} [0-9]{2}:[0-9]{2})".r
+    val soldAtRegex(soldAtText) = soldAtInfo
+
+    val soldAt = toInstant(soldAtText)
+
+    (startedAt, soldAt, visitCount.toInt)
+  } match {
+    case Success((startedAt, soldAt, visitCount)) =>
+      priceScraperAuction.copy(startedAt = Some(startedAt), soldAt = Some(soldAt), visitCount = Some(visitCount))
+
+    case Failure(f) =>
+      Logger.error(s"extractAuctionInformations: Extraction error for auction ${priceScraperAuction.auctionId}", f)
+      priceScraperAuction
+  }
+
+  /**
+    * Converts a date to an Instant
+    * Exemple of date: vendredi 23 juin 2017 20:06
+    *
+    * @param date
+    * @return
+    */
+  private def toInstant(date: String): Instant = {
+    LocalDateTime.parse(date, DateTimeFormatter.ofPattern("EEEE d MMMM yyyy HH:mm").withLocale(new java.util.Locale("fr"))).toInstant(ZoneOffset.UTC)
+  }
 }

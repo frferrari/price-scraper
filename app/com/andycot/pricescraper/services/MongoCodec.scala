@@ -11,6 +11,9 @@ import org.bson.codecs.{Codec, DecoderContext, EncoderContext}
 import org.bson.{BsonReader, BsonWriter}
 import org.mongodb.scala.bson.codecs.{DEFAULT_CODEC_REGISTRY, Macros}
 
+import scala.reflect.ClassTag
+import scala.reflect.runtime.universe._
+
 /**
   * Created by Francois FERRARI on 19/06/2017
   */
@@ -25,7 +28,7 @@ object MongoCodec {
   )
 
   def getCodecRegistry: CodecRegistry = fromRegistries(
-    CodecRegistries.fromCodecs(UriCodec, BigDecimalCodec, InstantCodec, LocalDateCodec, LocalDateTimeCodec),
+    CodecRegistries.fromCodecs(BigDecimalCodec, InstantCodec, LocalDateCodec, LocalDateTimeCodec),
     DEFAULT_CODEC_REGISTRY,
     providers
   )
@@ -79,17 +82,4 @@ object MongoCodec {
 
     override def getEncoderClass: Class[LocalDateTime] = classOf[LocalDateTime]
   }
-
-  object UriCodec extends Codec[Uri] {
-    override def decode(reader: BsonReader, decoderContext: DecoderContext): Uri = {
-      Uri(reader.readString())
-    }
-
-    override def encode(writer: BsonWriter, value: Uri, encoderContext: EncoderContext): Unit = {
-      writer.writeString(value.toString())
-    }
-
-    override def getEncoderClass: Class[Uri] = classOf[Uri]
-  }
-
 }

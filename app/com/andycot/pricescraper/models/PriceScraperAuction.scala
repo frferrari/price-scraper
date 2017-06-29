@@ -11,7 +11,7 @@ import org.mongodb.scala.bson.codecs.Macros
   */
 case class PriceScraperAuction(auctionId: String,
                                website: String,
-                               auctionUri: Uri,
+                               auctionUrl: String,
                                auctionTitle: String,
                                auctionType: String,
                                nrBids: Option[Int],
@@ -20,6 +20,7 @@ case class PriceScraperAuction(auctionId: String,
                                itemPrice: PriceScraperItemPrice,
                                startedAt: Option[Instant] = None,
                                soldAt: Option[Instant] = None,
+                               visitCount: Option[Int] = None,
                                createdAt: Instant = Instant.now(),
                                checkedAt: Option[Instant] = None,
                                checkedStatus: Option[Int] = None

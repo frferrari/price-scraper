@@ -44,13 +44,8 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
   // ApplicationLifecycle object. The code inside the stop hook will
   // be run when the application stops.
   appLifecycle.addStopHook { () =>
-    // stopScraping -- KillSwitch
+    // TODO stopScraping -- KillSwitch
     Future.successful(())
-  }
-
-  priceScraperUrlService.createOne(PriceScraperUrl("mywebsite", Uri("http://www.delcampe.net"))).onComplete {
-    case Success(s) => Logger.info("=====> Success inserting url")
-    case Failure(f) => Logger.info("=====> Failure inserting url", f)
   }
 
   startScraping()
@@ -90,17 +85,17 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       */
     val getHtmlContentFromBaseUrl: Flow[PriceScraperUrl, BasePriceScraperUrlWithHtmlContent, NotUsed] =
       Flow[PriceScraperUrl].mapAsync[BasePriceScraperUrlWithHtmlContent](numberOfUrlsProcessedInParallel) { priceScraperUrl =>
-        Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} url ${priceScraperUrl.uri}")
+        Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} url ${priceScraperUrl.url}")
 
         val htmlContentF: Future[String] =
-          Http().singleRequest(HttpRequest(uri = priceScraperUrl.uri))
+          Http().singleRequest(HttpRequest(uri = priceScraperUrl.url))
             .flatMap {
               case res if res.status.isSuccess =>
                 res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
 
               case res =>
-                Logger.error(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.uri} error ${res.status}")
-                throw new ResourceUnavailable(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.uri} error ${res.status}")
+                Logger.error(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
+                throw new ResourceUnavailable(s"Unable to access website ${priceScraperUrl.website} with url ${priceScraperUrl.url} error ${res.status}")
             }
 
         htmlContentF.map(htmlContent => priceScraperUrl -> htmlContent)
@@ -136,20 +131,27 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       */
     val fetchAuctionInformations: Flow[PriceScraperAuction, PriceScraperAuction, NotUsed] =
       Flow[PriceScraperAuction].mapAsync[PriceScraperAuction](numberOfAuctionsFetchedInParallel) { priceScraperAuction =>
-        Logger.info(s"Processing WEBSITE ${priceScraperAuction.website} auctionId ${priceScraperAuction.auctionId} url ${priceScraperAuction.auctionUri}")
+        Logger.info(s"Processing WEBSITE ${priceScraperAuction.website} auctionId ${priceScraperAuction.auctionId} url ${priceScraperAuction.auctionUrl}")
 
         val htmlContentF: Future[String] =
-          Http().singleRequest(HttpRequest(uri = priceScraperAuction.auctionUri))
+          Http().singleRequest(HttpRequest(uri = priceScraperAuction.auctionUrl))
             .flatMap {
               case res if res.status.isSuccess =>
                 res.entity.dataBytes.runFold(ByteString(""))(_ ++ _).map(_.utf8String)
 
               case res =>
-                Logger.error(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUri} error ${res.status}")
-                throw new ResourceUnavailable(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUri} error ${res.status}")
+                Logger.error(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUrl} error ${res.status}")
+                throw new ResourceUnavailable(s"Unable to access auctionId ${priceScraperAuction.auctionId} website ${priceScraperAuction.website} with url ${priceScraperAuction.auctionUrl} error ${res.status}")
             }
 
-        htmlContentF.map(extractAuctionInformations(priceScraperAuction))
+        htmlContentF.map {
+          case htmlContent if priceScraperAuction.website == PriceScraperWebsite.DCP =>
+            PriceScraperDCP.extractAuctionInformations(priceScraperAuction, htmlContent)
+
+          case _ =>
+            Logger.info(s"fetchAuctionInformations: Unknown website ${priceScraperAuction.website}, won't scrap auctionInformations")
+            priceScraperAuction
+        }
       }
 
     /*
@@ -172,16 +174,17 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
         .flatMapConcat(urls =>
           Source
             .fromIterator(() => urls.toIterator)
-//            .throttle(1, imNotARobot(10, 10), 1, ThrottleMode.Shaping)
+            .throttle(1, imNotARobot(10, 10), 1, ThrottleMode.Shaping)
             .via(priceScraperAuctionsFlow)
         )
+        .throttle(1, imNotARobot(2, 8), 1, ThrottleMode.Shaping)
+        .via(fetchAuctionInformations)
         .map { auction =>
           priceScraperAuctionService.createOne(auction).recover {
             case NonFatal(e) => Logger.error("MongoDB persistence error", e)
           }
           auction
         }
-        .via(fetchAuctionInformations)
         .runForeach(printOut)
     }.recover {
       case NonFatal(e) =>
@@ -189,17 +192,6 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
     }
 
     ()
-  }
-
-  def extractAuctionInformations(priceScraperAuction: PriceScraperAuction)(htmlContent: String): PriceScraperAuction = {
-    val html = Jsoup.parse(htmlContent).select("body")
-    val startedAtInfo = html.select(".info-view") // .text().replaceAll("&nbsp;", "")
-    val soldAtInfo = html.select(".alert-info") // .text().replaceAll("&nbsp;", "")
-    val visitCountInfo = html.select(".visit-count") // .text().trim
-
-    Logger.info(s"startedAtInfo $startedAtInfo soldAtInfo $soldAtInfo visitCountInfo $visitCountInfo")
-
-    priceScraperAuction
   }
 
 //    override def extractAuctions(website: String, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {

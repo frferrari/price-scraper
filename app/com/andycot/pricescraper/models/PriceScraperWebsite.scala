@@ -8,7 +8,7 @@ import akka.http.scaladsl.model.Uri
   * Created by Francois FERRARI on 12/06/2017
   */
 case class PriceScraperWebsite(website: String,
-                               baseUri: Uri,
+                               baseUrl: String,
                                canSortByAuctionEndDate: Boolean,
                                defaultQueryParameters: Seq[PriceScraperQueryParameter],
                                created_at: Instant = Instant.now()

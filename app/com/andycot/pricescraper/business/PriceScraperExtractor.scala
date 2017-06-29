@@ -3,15 +3,20 @@ package com.andycot.pricescraper.business
 import akka.http.scaladsl.model.Uri
 import com.andycot.pricescraper.models._
 import com.andycot.pricescraper.services.PriceScraperUrlService
+import org.jsoup.Jsoup
+import play.api.Logger
 
 import scala.concurrent.Future
 import scala.util.Try
+import scala.util.matching.Regex
 
 /**
   * Created by Francois FERRARI on 12/06/2017
   */
 trait PriceScraperExtractor {
-  def extractAuctions(priceScraperWebsite: PriceScraperWebsite, uri: Uri, htmlContent: String): Future[Seq[PriceScraperAuction]]
+  def extractAuctions(priceScraperWebsite: PriceScraperWebsite, url: String, htmlContent: String): Future[Seq[PriceScraperAuction]]
+
+  def extractAuctionInformations(priceScraperAuction: PriceScraperAuction, htmlContent: String): PriceScraperAuction
 
   def getPagedUrls(priceCrawlerUrl: PriceScraperUrl, priceCrawlerWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[PriceScraperUrl]
 

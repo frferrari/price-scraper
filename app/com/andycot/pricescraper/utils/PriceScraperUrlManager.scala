@@ -1,5 +1,6 @@
 package com.andycot.pricescraper.utils
 
+import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.Query
 import com.andycot.pricescraper.models.{PriceScraperQueryParameter, PriceScraperUrl, PriceScraperWebsite}
 
@@ -31,6 +32,6 @@ object PriceScraperUrlManager {
   def generateUrl(priceScraperUrl: PriceScraperUrl, defaultQueryParameters: Seq[PriceScraperQueryParameter])(pageNumber: Int = 1): PriceScraperUrl = {
     val queryParameters = defaultQueryParameters.map(dqp => dqp.name -> dqp.value) :+ ("page", pageNumber.toString)
 
-    priceScraperUrl.copy(uri = priceScraperUrl.uri.withQuery(Query(queryParameters:_*)))
+    priceScraperUrl.copy(url = Uri(priceScraperUrl.url).withQuery(Query(queryParameters:_*)).toString)
   }
 }
