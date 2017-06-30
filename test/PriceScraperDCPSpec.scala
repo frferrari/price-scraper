@@ -49,22 +49,4 @@ class PriceScraperDCPSpec
       PriceScraperDCP.extractSoldAtText("Vendue le mardi 28 février 2017 13:55") shouldBe "mardi 28 février 2017 13:55"
     }
   }
-
-  "Extracting the offer count" should {
-    "return Some(1) for a single offer" in {
-      PriceScraperDCP.extractOfferCount("Offre (1)") shouldBe Some(1)
-    }
-
-    "return Some(5) for 5 offers" in {
-      PriceScraperDCP.extractOfferCount("Offre (5)") shouldBe Some(5)
-    }
-
-    "return Some(14) for 14 offers" in {
-      PriceScraperDCP.extractOfferCount("Offre (14)") shouldBe Some(14)
-    }
-
-    "return None for a wrong offer text" in {
-      PriceScraperDCP.extractOfferCount("Offre (") shouldBe None
-    }
-  }
 }

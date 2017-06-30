@@ -21,7 +21,6 @@ case class PriceScraperAuction(auctionId: String,
                                startedAt: Option[Instant] = None,
                                soldAt: Option[Instant] = None,
                                visitCount: Option[Int] = None,
-                               offerCount: Option[Int] = None,
                                createdAt: Instant = Instant.now(),
                                checkedAt: Option[Instant] = None,
                                checkedStatus: Option[Int] = None

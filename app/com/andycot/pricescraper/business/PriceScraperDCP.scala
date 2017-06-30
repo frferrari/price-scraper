@@ -68,7 +68,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
             val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
             val auctionTypeAndNrBids = Try(if (sellingType.text().contains(sellingTypeFixedPrice)) {
-              (PriceScraperAuction.FIXED_PRICE, None)
+              (PriceScraperAuction.FIXED_PRICE, Some(1))
             } else {
               val sellingTypeBidsRegex(b) = sellingType.text()
               (PriceScraperAuction.AUCTION, Some(b.toInt))
@@ -172,23 +172,10 @@ object PriceScraperDCP extends PriceScraperExtractor {
     val soldAtText = extractSoldAtText(soldAtInfo)
     val soldAt = toInstant(soldAtText)
 
-    /*
-     * Offer count can be found in the following html
-     *
-     * <a href="#tab-bids" aria-controls="tab-bids" role="tab" data-toggle="tab" aria-expanded="true">Offre (1)</a>
-     *
-     */
-    val offerCount = if (priceScraperAuction.auctionType == PriceScraperAuction.AUCTION) {
-      val offerCountText = html.select("#pill-tab-bids > a").text.trim
-      extractOfferCount(priceScraperAuction, offerCountText)
-    } else {
-      Some(1)
-    }
-
-    (startedAt, soldAt, visitCount, offerCount)
+    (startedAt, soldAt, visitCount)
   } match {
-    case Success((startedAt, soldAt, visitCount, offerCount)) =>
-      priceScraperAuction.copy(startedAt = Some(startedAt), soldAt = Some(soldAt), visitCount = Some(visitCount), offerCount = offerCount)
+    case Success((startedAt, soldAt, visitCount)) =>
+      priceScraperAuction.copy(startedAt = Some(startedAt), soldAt = Some(soldAt), visitCount = Some(visitCount))
 
     case Failure(f) =>
       Logger.error(s"extractAuctionInformations: Extraction error for auction ${priceScraperAuction.auctionId}", f)
@@ -227,23 +214,5 @@ object PriceScraperDCP extends PriceScraperExtractor {
     val soldAtRegex(soldAtText) = soldAtInfo
 
     soldAtText
-  }
-
-  /**
-    * Extracts the date/time when the auction was sold at
-    *
-    * @param offerCountText A text containing the offer count, ex: Offre (1) or Offres (5)
-    */
-  def extractOfferCount(priceScraperAuction: PriceScraperAuction, offerCountText: String): Option[Int] = Try {
-    val offerCountRegex = "Offre[^0-9]+([0-9]+).*".r
-    val offerCountRegex(offerCount) = offerCountText
-    offerCount.toInt
-  } match {
-    case Success(offerCount) =>
-      Some(offerCount)
-
-    case Failure(f) =>
-      Logger.error(s"extractOfferCount Error extracting offer count for auction ${priceScraperAuction.auctionId}", f)
-      None
   }
 }
