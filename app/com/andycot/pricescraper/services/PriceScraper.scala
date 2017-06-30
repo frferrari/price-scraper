@@ -168,16 +168,16 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
 
       priceScraperUrlsFlow
-//        .throttle(1, imNotARobot(30, 30), 1, ThrottleMode.Shaping)
+//        .throttle(1, imNotARobot(1000, 2000), 1, ThrottleMode.Shaping)
         .via(getHtmlContentFromBaseUrl)
         .via(generatePagedUrlsFromBaseUrl(priceScraperWebsites))
         .flatMapConcat(urls =>
           Source
             .fromIterator(() => urls.toIterator)
-            .throttle(1, imNotARobot(10, 10), 1, ThrottleMode.Shaping)
+            .throttle(1, imNotARobot(200, 4000), 1, ThrottleMode.Shaping)
             .via(priceScraperAuctionsFlow)
         )
-        .throttle(1, imNotARobot(2, 8), 1, ThrottleMode.Shaping)
+        .throttle(1, imNotARobot(400, 600), 1, ThrottleMode.Shaping)
         .via(fetchAuctionInformations)
         .map { auction =>
           priceScraperAuctionService.createOne(auction).recover {
@@ -268,7 +268,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
     */
   def imNotARobot(base: Int, range: Int): FiniteDuration = {
     val r = scala.util.Random
-    (base + r.nextInt(range)).seconds
+    (base + r.nextInt(range)).milliseconds
   }
 
   /**

@@ -14,6 +14,7 @@ import play.api.Logger
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.util.matching.Regex
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -36,7 +37,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
   val sellingTypeBidsRegex = """([0-9]+).*""".r // Something like "1&nbsp;offre" or "3&nbsp;offres"
 
   // Matches a price string like this one "6,00 €" or "~ 6,00 €"
-  val priceCurrencyRegex = """.*([0-9,.]+)(.*)""".r
+  val priceCurrencyRegex = """.*([0-9]+[,.]+[0-9]*)(.*)""".r
 
   val auctionIdRegex = """item-([0-9]+)""".r
 
@@ -163,23 +164,31 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
     // Début de la vente : jeudi 22 juin 2017 à 13:55 15 visites
     val startedAtInfo = html.select(".info-view").text.replace("&nbsp;", " ").trim
-    Logger.info(s"startedAtInfo [$startedAtInfo]")
-    val startedAtRegex = ".*vente[^A-Za-z]+([A-Za-z]+ [0-9]+ [A-Za-z]+ [0-9]+).*([0-9]{2}:[0-9]{2}) ([0-9]+) visites".r
-    val startedAtRegex(startedAtDay, startedAtTime, visitCount) = startedAtInfo
-    val startedAtText = s"$startedAtDay $startedAtTime"
+    val (startedAtText, visitCount) = extractStartedAtText(startedAtInfo)
     val startedAt = toInstant(startedAtText)
 
     // Vendue le vendredi 23 juin 2017 20:06
     val soldAtInfo = html.select(".alert-info").text().replaceAll("&nbsp;", " ").trim
-    val soldAtRegex = "Vendue le ([A-ZA-z]+ [0-9]+ [A-ZA-z]+ [0-9]{4} [0-9]{2}:[0-9]{2})".r
-    val soldAtRegex(soldAtText) = soldAtInfo
-
+    val soldAtText = extractSoldAtText(soldAtInfo)
     val soldAt = toInstant(soldAtText)
 
-    (startedAt, soldAt, visitCount.toInt)
+    /*
+     * Offer count can be found in the following html
+     *
+     * <a href="#tab-bids" aria-controls="tab-bids" role="tab" data-toggle="tab" aria-expanded="true">Offre (1)</a>
+     *
+     */
+    val offerCount = if (priceScraperAuction.auctionType == PriceScraperAuction.AUCTION) {
+      val offerCountText = html.select("#pill-tab-bids > a").text.trim
+      extractOfferCount(priceScraperAuction, offerCountText)
+    } else {
+      Some(1)
+    }
+
+    (startedAt, soldAt, visitCount, offerCount)
   } match {
-    case Success((startedAt, soldAt, visitCount)) =>
-      priceScraperAuction.copy(startedAt = Some(startedAt), soldAt = Some(soldAt), visitCount = Some(visitCount))
+    case Success((startedAt, soldAt, visitCount, offerCount)) =>
+      priceScraperAuction.copy(startedAt = Some(startedAt), soldAt = Some(soldAt), visitCount = Some(visitCount), offerCount = offerCount)
 
     case Failure(f) =>
       Logger.error(s"extractAuctionInformations: Extraction error for auction ${priceScraperAuction.auctionId}", f)
@@ -188,12 +197,53 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
   /**
     * Converts a date to an Instant
-    * Exemple of date: vendredi 23 juin 2017 20:06
     *
-    * @param date
+    * @param date The date as a string in french language (vendredi 23 juin 2017 20:06)
     * @return
     */
-  private def toInstant(date: String): Instant = {
+  def toInstant(date: String): Instant = {
     LocalDateTime.parse(date, DateTimeFormatter.ofPattern("EEEE d MMMM yyyy HH:mm").withLocale(new java.util.Locale("fr"))).toInstant(ZoneOffset.UTC)
+  }
+
+  /**
+    * Extracts the date/time when the auction was started as well as the number of visits for this auction
+    *
+    * @param startedAtInfo A text containing the started at information
+    */
+  def extractStartedAtText(startedAtInfo: String): (String, Int) = {
+    val startedAtRegex = ".*vente[^A-Za-z]+([A-Za-z]+ [0-9]+ [^ ]+ [0-9]+).*([0-9]{2}:[0-9]{2}) ([0-9]+) visite.*".r
+    val startedAtRegex(startedAtDate, startedAtTime, visitCount) = startedAtInfo
+
+    (s"$startedAtDate $startedAtTime", visitCount.toInt)
+  }
+
+  /**
+    * Extracts the date/time when the auction was sold at
+    *
+    * @param soldAtInfo A text containing the soldAt information
+    */
+  def extractSoldAtText(soldAtInfo: String): String = {
+    val soldAtRegex = "Vendue le ([A-ZA-z]+ [0-9]+ [^ ]+ [0-9]{4} [0-9]{2}:[0-9]{2})".r
+    val soldAtRegex(soldAtText) = soldAtInfo
+
+    soldAtText
+  }
+
+  /**
+    * Extracts the date/time when the auction was sold at
+    *
+    * @param offerCountText A text containing the offer count, ex: Offre (1) or Offres (5)
+    */
+  def extractOfferCount(priceScraperAuction: PriceScraperAuction, offerCountText: String): Option[Int] = Try {
+    val offerCountRegex = "Offre[^0-9]+([0-9]+).*".r
+    val offerCountRegex(offerCount) = offerCountText
+    offerCount.toInt
+  } match {
+    case Success(offerCount) =>
+      Some(offerCount)
+
+    case Failure(f) =>
+      Logger.error(s"extractOfferCount Error extracting offer count for auction ${priceScraperAuction.auctionId}", f)
+      None
   }
 }
