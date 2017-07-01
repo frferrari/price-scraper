@@ -1,6 +1,6 @@
 package com.andycot.pricescraper.business
 
-import java.time.{Instant, LocalDateTime, ZoneOffset}
+import java.time.{Instant, LocalDate, LocalDateTime, ZoneOffset}
 import java.time.format.DateTimeFormatter
 import java.util
 
@@ -37,73 +37,98 @@ object PriceScraperDCP extends PriceScraperExtractor {
   val sellingTypeBidsRegex = """([0-9]+).*""".r // Something like "1&nbsp;offre" or "3&nbsp;offres"
 
   // Matches a price string like this one "6,00 €" or "~ 6,00 €"
-  val priceCurrencyRegex = """.*([0-9]+[,.]+[0-9]*)(.*)""".r
+  val priceCurrencyRegex =
+    """.*([0-9]+[,.]+[0-9]*)(.*)""".r
 
   val auctionIdRegex = """item-([0-9]+)""".r
 
-  override def extractAuctions(priceScraperWebsite: PriceScraperWebsite, url: String, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
+  override def extractAuctions(priceScraperWebsite: PriceScraperWebsite, priceScraperUrl: PriceScraperUrl, htmlContent: String): Future[Seq[PriceScraperAuction]] = Future {
     @tailrec def extractAuction(elementsIterator: util.Iterator[Element], priceScraperAuctions: Seq[PriceScraperAuction] = Nil): Seq[PriceScraperAuction] = {
-      elementsIterator.hasNext match {
-        case true =>
-          val element: Element = elementsIterator.next()
-          val imageContainer = element.select("div.item-content > div.image-container")
-          val auctionIdRegex(auctionId) = element.attr("id")
+      if (elementsIterator.hasNext) {
+        val element: Element = elementsIterator.next()
+        val imageContainer = element.select("div.item-content > div.image-container")
+        val auctionIdRegex(auctionId) = element.attr("id")
 
-          if (imageContainer.select("a.img-view").hasClass("default-thumb")) {
-            Logger.info(s"PriceCrawlerDCP.extractAuction auction $auctionId has no picture, skipping ...")
-            extractAuction(elementsIterator, priceScraperAuctions)
+        if (imageContainer.select("a.img-view").hasClass("default-thumb")) {
+          Logger.info(s"PriceCrawlerDCP.extractAuction auction $auctionId has no picture, skipping ...")
+          extractAuction(elementsIterator, priceScraperAuctions)
+        } else {
+
+          val auctionId = imageContainer.select("a.img-view").attr("data-item-id").trim
+          val largeUrl = element.select("a.img-view").attr("href").trim
+          //
+          val imgThumbElement = imageContainer.select("img.image-thumb")
+          val auctionTitle = imgThumbElement.attr("alt").trim
+          val thumbnailUrl = imgThumbElement.attr("data-original").trim
+
+          //
+          val itemFooterElement = element.select("div.item-content > div.item-footer")
+          val auctionUri = Uri(itemFooterElement.select("a.item-link").attr("href").trim).resolvedAgainst(priceScraperWebsite.baseUrl)
+          val auctionPriceText = itemFooterElement.select(".item-price").text().trim
+
+          val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
+          val auctionTypeAndNrBids = Try(if (sellingType.text().contains(sellingTypeFixedPrice)) {
+            (PriceScraperAuction.FIXED_PRICE, Some(1))
           } else {
+            val sellingTypeBidsRegex(b) = sellingType.text()
+            (PriceScraperAuction.AUCTION, Some(b.toInt))
+          })
 
-            val auctionId = imageContainer.select("a.img-view").attr("data-item-id").trim
-            val largeUrl = element.select("a.img-view").attr("href").trim
-            //
-            val imgThumbElement = imageContainer.select("img.image-thumb")
-            val auctionTitle = imgThumbElement.attr("alt").trim
-            val thumbUrl = imgThumbElement.attr("data-original").trim
+          val yearRange: Option[PriceScraperYearRange] = priceScraperUrl.familyId match {
+            case PriceScraperAuction.FAMILY_STAMP =>
+              // TODO Make this dependent of the Website
+              PriceScraperDCP.guessYear(auctionTitle, priceScraperUrl.yearRange)
 
-            //
-            val itemFooterElement = element.select("div.item-content > div.item-footer")
-            val auctionUri = Uri(itemFooterElement.select("a.item-link").attr("href").trim).resolvedAgainst(priceScraperWebsite.baseUrl)
-            val itemPrice = itemFooterElement.select(".item-price").text().trim
-
-            val sellingType = itemFooterElement.select("div.selling-type-right > span.selling-type-text")
-            val auctionTypeAndNrBids = Try(if (sellingType.text().contains(sellingTypeFixedPrice)) {
-              (PriceScraperAuction.FIXED_PRICE, Some(1))
-            } else {
-              val sellingTypeBidsRegex(b) = sellingType.text()
-              (PriceScraperAuction.AUCTION, Some(b.toInt))
-            })
-
-            if ( auctionId.length > 0 && auctionTitle.length > 0 && thumbUrl.length > 0 && largeUrl.length > 0 ) {
-              (getItemPrice(itemPrice), auctionTypeAndNrBids) match {
-                case (Success(priceScraperItemPrice), Success((auctionType, nrBids))) =>
-                  extractAuction(elementsIterator, priceScraperAuctions :+ PriceScraperAuction(auctionId, priceScraperWebsite.website, auctionUri.toString, auctionTitle, auctionType, nrBids, thumbUrl, largeUrl, priceScraperItemPrice))
-
-                case (Failure(f1), Failure(f2)) =>
-                  Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f1)
-                  Logger.error(s"Auction $auctionId failed to process itemPrice and auctionType/nrBids, skipping ...", f2)
-                  extractAuction(elementsIterator, priceScraperAuctions)
-
-                case (Failure(f1), Success(_)) =>
-                  Logger.error(s"Auction $auctionId failed to process itemPrice $itemPrice, skipping ...", f1)
-                  extractAuction(elementsIterator, priceScraperAuctions)
-
-                case (Success(_), Failure(f2)) =>
-                  Logger.error(s"Auction $auctionId failed to process auctionType/nrBids $sellingType, skipping ...", f2)
-                  extractAuction(elementsIterator, priceScraperAuctions)
-              }
-            } else {
-              Logger.info(s"Auction $auctionId is missing some informations, skipping ...")
-              extractAuction(elementsIterator, priceScraperAuctions)
-            }
+            case _ =>
+              None
           }
 
-        case false =>
-          priceScraperAuctions
+          if (auctionId.length > 0 && auctionTitle.length > 0 && thumbnailUrl.length > 0 && largeUrl.length > 0) {
+            (getAuctionPrice(auctionPriceText), auctionTypeAndNrBids) match {
+              case (Success(auctionPrice), Success((auctionType, offerCount))) =>
+                val auction = PriceScraperAuction(
+                  auctionId,
+                  priceScraperWebsite.website,
+                  auctionUri.toString,
+                  thumbnailUrl,
+                  largeUrl,
+                  auctionTitle,
+                  auctionType,
+                  priceScraperUrl.familyId,
+                  priceScraperUrl.areaId,
+                  priceScraperUrl.topicId,
+                  yearRange,
+                  priceScraperUrl.defaultOptions,
+                  offerCount,
+                  auctionPrice
+                )
+
+                extractAuction(elementsIterator, priceScraperAuctions :+ auction)
+
+              case (Failure(f1), Failure(f2)) =>
+                Logger.error(s"Auction $auctionId failed to process auctionPriceText and auctionType/offerCount, skipping ...", f1)
+                Logger.error(s"Auction $auctionId failed to process auctionPriceText and auctionType/offerCount, skipping ...", f2)
+                extractAuction(elementsIterator, priceScraperAuctions)
+
+              case (Failure(f1), Success(_)) =>
+                Logger.error(s"Auction $auctionId failed to process auctionPriceText $auctionPriceText, skipping ...", f1)
+                extractAuction(elementsIterator, priceScraperAuctions)
+
+              case (Success(_), Failure(f2)) =>
+                Logger.error(s"Auction $auctionId failed to process auctionType/offerCount $sellingType, skipping ...", f2)
+                extractAuction(elementsIterator, priceScraperAuctions)
+            }
+          } else {
+            Logger.info(s"Auction $auctionId is missing some informations, skipping ...")
+            extractAuction(elementsIterator, priceScraperAuctions)
+          }
+        }
+      } else {
+        priceScraperAuctions
       }
     }
 
-    extractAuction(Jsoup.parse(htmlContent, url).select(".item-gallery").iterator())
+    extractAuction(Jsoup.parse(htmlContent, priceScraperUrl.url).select(".item-gallery").iterator())
   }
 
   /**
@@ -131,14 +156,14 @@ object PriceScraperDCP extends PriceScraperExtractor {
     * @param priceWithCurrency
     * @return
     */
-  override def getItemPrice(priceWithCurrency: String): Try[PriceScraperItemPrice] = Try {
+  override def getAuctionPrice(priceWithCurrency: String): Try[PriceScraperAuctionPrice] = Try {
 
     val priceCurrencyRegex(price, externalCurrency) = priceWithCurrency
 
     mapToInternalCurrency(externalCurrency) match {
       case Some(internalCurrency) =>
         // An external price is a string like "120,00" or "4 950,00"
-        PriceScraperItemPrice(BigDecimal(price.replace(",", ".").replace(" ", "")), internalCurrency)
+        PriceScraperAuctionPrice(BigDecimal(price.replace(",", ".").replace(" ", "")), internalCurrency)
 
       case _ =>
         Logger.error(s"PriceCrawlerDCP.getItemPrice Couldn't parse currency $externalCurrency")

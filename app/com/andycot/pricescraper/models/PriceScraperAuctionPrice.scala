@@ -6,4 +6,6 @@ import org.mongodb.scala.bson.codecs.Macros
 /**
   * Created by Francois FERRARI on 13/06/2017
   */
-case class PriceScraperItemPrice(price: BigDecimal, currency: String)
+case class PriceScraperAuctionPrice(price: BigDecimal,
+                                    currency: String
+                                   )

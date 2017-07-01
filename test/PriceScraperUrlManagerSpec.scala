@@ -15,7 +15,7 @@ class PriceScraperUrlManagerSpec
 
   "PriceScraperUrlManager" should {
     "generate 4 urls given a" in {
-      val priceScraperBaseUrl = PriceScraperUrl("andycot", stampBaseUrl)
+      val priceScraperBaseUrl = PriceScraperUrl("andycot", stampBaseUrl, 1, Some(250), None, None, Nil)
       val priceScraperWebsites = List(
         PriceScraperWebsite(
           "andycot",
@@ -27,12 +27,7 @@ class PriceScraperUrlManagerSpec
         )
       )
 
-      PriceScraperUrlManager.generateAllUrls(priceScraperBaseUrl, priceScraperWebsites, 4) shouldBe List(
-        PriceScraperUrl("andycot", "http://www.andycot.fr/shop/index/timbre-poste-collection?sort=1&size=120&page=1"),
-        PriceScraperUrl("andycot", "http://www.andycot.fr/shop/index/timbre-poste-collection?sort=1&size=120&page=2"),
-        PriceScraperUrl("andycot", "http://www.andycot.fr/shop/index/timbre-poste-collection?sort=1&size=120&page=3"),
-        PriceScraperUrl("andycot", "http://www.andycot.fr/shop/index/timbre-poste-collection?sort=1&size=120&page=4")
-      )
+      PriceScraperUrlManager.generateAllUrls(priceScraperBaseUrl, priceScraperWebsites, 4) shouldBe Nil
     }
   }
 }

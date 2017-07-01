@@ -20,8 +20,10 @@ import scala.reflect.runtime.universe._
 object MongoCodec {
 
   private val providers = fromProviders(
-    Macros.createCodecProvider[PriceScraperItemPrice](),
+    Macros.createCodecProvider[PriceScraperAuctionPrice](),
     Macros.createCodecProvider[PriceScraperAuction](),
+    Macros.createCodecProvider[PriceScraperYearRange](),
+    Macros.createCodecProvider[PriceScraperOption](),
     Macros.createCodecProvider[PriceScraperUrl](),
     Macros.createCodecProvider[PriceScraperQueryParameter](),
     Macros.createCodecProvider[PriceScraperWebsite]()

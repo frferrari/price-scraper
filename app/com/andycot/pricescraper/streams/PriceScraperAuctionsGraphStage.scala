@@ -40,33 +40,33 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
       override def onPush(): Unit = {
 
         grab(in) match {
-          case PriceScraperUrlContent(PriceScraperUrl(website, uri), Some(htmlContent)) =>
-            getPriceScraperWebsite(website) match {
+          case PriceScraperUrlContent(priceScraperUrl, Some(htmlContent)) =>
+            getPriceScraperWebsite(priceScraperUrl.website) match {
               case Some(priceScraperWebsite) =>
-                Logger.info(s"Processing WEBSITE $website URL $uri w/htmlContent")
+                Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} URL ${priceScraperUrl.url} w/htmlContent")
                 (for {
-                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, uri, htmlContent)
+                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, priceScraperUrl, htmlContent)
                   alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
-                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, uri).invoke)
+                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, priceScraperUrl.url).invoke)
 
               case None =>
-                Logger.error(s"Unknown WEBSITE $website for URL $uri w/htmlContent")
-                pull(in)
+                Logger.error(s"Unknown WEBSITE ${priceScraperUrl.website} for URL ${priceScraperUrl.url} w/htmlContent")
+                maybePullIn()
             }
 
-          case PriceScraperUrlContent(PriceScraperUrl(website, uri), None) =>
-            getPriceScraperWebsite(website) match {
+          case PriceScraperUrlContent(priceScraperUrl, None) =>
+            getPriceScraperWebsite(priceScraperUrl.website) match {
               case Some(priceScraperWebsite) =>
-                Logger.info(s"Processing WEBSITE $website URL $uri w/o htmlContent")
+                Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} URL ${priceScraperUrl.url} w/o htmlContent")
                 (for {
-                  htmlContent <- getHtmlContent(uri)
-                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, uri, htmlContent)
+                  htmlContent <- getHtmlContent(priceScraperUrl.url)
+                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, priceScraperUrl, htmlContent)
                   alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
-                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, uri).invoke)
+                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, priceScraperUrl.url).invoke)
 
               case None =>
-                Logger.error(s"Unknown WEBSITE $website for URL $uri w/o htmlContent")
-                pull(in)
+                Logger.error(s"Unknown WEBSITE ${priceScraperUrl.website} for URL ${priceScraperUrl.url} w/o htmlContent")
+                maybePullIn()
             }
         }
       }
@@ -74,7 +74,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
       override def onPull(): Unit = {
         // We pull(in) only if we have emptied the auctions queue, this way we process each uri in "sequence"
         if (!pushNextAuction() && !isClosed(in)) {
-          pull(in)
+          maybePullIn()
         }
       }
 
@@ -83,6 +83,14 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
         if (priceScraperAuctions.isEmpty) complete(out)
       }
     })
+
+    /**
+      * Pull(in) only if necessary
+      */
+    def maybePullIn(): Unit = {
+      if (!hasBeenPulled(in))
+        pull(in)
+    }
 
     /**
       *
@@ -123,8 +131,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.length == auctions.length && auctions.nonEmpty && !priceScraperWebsite.canSortByAuctionEndDate =>
         Logger.info(s"All the auctions are ALREADY recorded for $uri, continuing with same base URL")
-
-        if (!hasBeenPulled(in)) pull(in)
+        maybePullIn()
 
       case Success((auctions, alreadyRecordedAuctions)) if alreadyRecordedAuctions.isEmpty =>
         val newAuctions = getNewAuctions(auctions, alreadyRecordedAuctions)
@@ -163,7 +170,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
         // Push one auction
         pushNextAuction()
 
-        if (!hasBeenPulled(in)) pull(in)
+        maybePullIn()
 
       case Failure(f) =>
         // TODO refactor ???
@@ -172,6 +179,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
     /**
       * Push the next auction if there's one available in the queue
+      *
       * @return true if an auction was pushed
       *         false if no auction was pushed
       */
@@ -186,7 +194,8 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
     /**
       * Get a list of elements from the "auctions" list that are not in the "alreadyRecordedAuctions" list
-      * @param auctions A list of auctions eventually containing new auctions
+      *
+      * @param auctions                A list of auctions eventually containing new auctions
       * @param alreadyRecordedAuctions The auctions from the "auctions" list that are already recorded in mongodb
       * @return
       */
@@ -197,11 +206,11 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
     /**
       * Finds a PriceScraperWebsite from a website
+      *
       * @param website
       * @return A Some(PriceScraperWebsite) for an existing website
       *         A None when the website was not found
       */
     def getPriceScraperWebsite(website: String): Option[PriceScraperWebsite] = priceScraperWebsites.find(_.website == website)
-
   }
 }
