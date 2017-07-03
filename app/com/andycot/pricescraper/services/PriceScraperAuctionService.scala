@@ -1,6 +1,6 @@
 package com.andycot.pricescraper.services
 
-import com.andycot.pricescraper.models.{PriceScraperAuction, PriceScraperAuction$}
+import com.andycot.pricescraper.models.PriceScraperAuction
 import org.mongodb.scala.model.Filters._
 import org.mongodb.scala.{Completed, MongoClient, MongoDatabase, _}
 

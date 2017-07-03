@@ -79,78 +79,78 @@ class PriceScraperDCPSpec
     //
     //
     "succeed to extract the year value when there's only one valid year (located at the beginning of the given string)" in {
-      PriceScraperDCP.guessValidYear("2017 MNH Alderney sea birds", PriceScraperDCP.validYearGeneral) shouldBe Some(PriceScraperYearRange(2017, 2017))
+      PriceScraperDCP.guessValidYear("2017 MNH Alderney sea birds", PriceScraperDCP.validYearCommonCase) shouldBe Some(PriceScraperYearRange(2017, 2017))
     }
     "succeed to extract the year value when there's only one valid year (located in the middle of the given string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney 2017 sea birds", PriceScraperDCP.validYearGeneral) shouldBe Some(PriceScraperYearRange(2017, 2017))
+      PriceScraperDCP.guessValidYear("MNH Alderney 2017 sea birds", PriceScraperDCP.validYearCommonCase) shouldBe Some(PriceScraperYearRange(2017, 2017))
     }
     "succeed to extract the year value when there's only one valid year (located at the end of the given string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 2017", PriceScraperDCP.validYearGeneral) shouldBe Some(PriceScraperYearRange(2017, 2017))
+      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 2017", PriceScraperDCP.validYearCommonCase) shouldBe Some(PriceScraperYearRange(2017, 2017))
     }
 
     //
     //
     //
     "succeed to extract the year when there's a valid year value (located at the beginning of the string) and an invalid year" in {
-      PriceScraperDCP.guessValidYear("2017 MNH Alderney 1600 sea birds", PriceScraperDCP.validYearGeneral) shouldBe Some(PriceScraperYearRange(2017, 2017))
+      PriceScraperDCP.guessValidYear("2017 MNH Alderney 1600 sea birds", PriceScraperDCP.validYearCommonCase) shouldBe Some(PriceScraperYearRange(2017, 2017))
     }
     "succeed to extract the year when there's a valid year value (located in the middle of the string) and an invalid year" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney 2017 sea 1600 birds", PriceScraperDCP.validYearGeneral) shouldBe Some(PriceScraperYearRange(2017, 2017))
+      PriceScraperDCP.guessValidYear("MNH Alderney 2017 sea 1600 birds", PriceScraperDCP.validYearCommonCase) shouldBe Some(PriceScraperYearRange(2017, 2017))
     }
     "succeed to extract the year when there's a valid year value (located at the end of the string) and an invalid year" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney 1600 sea birds 2017", PriceScraperDCP.validYearGeneral) shouldBe Some(PriceScraperYearRange(2017, 2017))
+      PriceScraperDCP.guessValidYear("MNH Alderney 1600 sea birds 2017", PriceScraperDCP.validYearCommonCase) shouldBe Some(PriceScraperYearRange(2017, 2017))
     }
 
     //
     //
     //
     "fail to extract the year when there's an invalid year value (located at the beginning of the string)" in {
-      PriceScraperDCP.guessValidYear("201 MNH Alderney sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("201 MNH Alderney sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there's an invalid year value (located in the middle of the string)" in {
-      PriceScraperDCP.guessValidYear("MNH 201 Alderney sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH 201 Alderney sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there's an invalid year value (located at the end of the string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 201", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 201", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
 
     //
     //
     //
     "fail to extract the year when there's a valid year value followed by other digits (located at the beginning of the string)" in {
-      PriceScraperDCP.guessValidYear("2017012 MNH Alderney sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("2017012 MNH Alderney sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there's a valid year value followed by other digits (located in the middle of the string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney 2017012 sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH Alderney 2017012 sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there's a valid year value followed by other digits (located at the end of the string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 2017012", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 2017012", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
 
     //
     //
     //
     "fail to extract the year when there's a valid year value followed by another valid year (located at the beginning of the string)" in {
-      PriceScraperDCP.guessValidYear("20172018 MNH Alderney sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("20172018 MNH Alderney sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there's a valid year value followed by another valid year (located in the middle of the string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney 20172018 sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH Alderney 20172018 sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there's a valid year value followed by another valid year (located at the end of the string)" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 20172018", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH Alderney sea birds 20172018", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
 
     //
     //
     //
     "fail to extract the year when there are two valid year values (one located at the beginning of the string) and another valid year" in {
-      PriceScraperDCP.guessValidYear("2017 MNH Alderney 2018 sea birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("2017 MNH Alderney 2018 sea birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there are two valid year values (one located in the middle of the string) followed by another valid year" in {
-      PriceScraperDCP.guessValidYear("MNH Alderney 2017 sea 2018 birds", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH Alderney 2017 sea 2018 birds", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
     "fail to extract the year when there are two valid year values (one located at the end of the string) followed by another valid year" in {
-      PriceScraperDCP.guessValidYear("MNH 2018 Alderney sea birds 2017", PriceScraperDCP.validYearGeneral) shouldBe None
+      PriceScraperDCP.guessValidYear("MNH 2018 Alderney sea birds 2017", PriceScraperDCP.validYearCommonCase) shouldBe None
     }
   }
 }

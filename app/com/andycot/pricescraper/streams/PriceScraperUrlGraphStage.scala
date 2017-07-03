@@ -20,7 +20,7 @@ import scala.util.{Failure, Success, Try}
   * anyway an update mechanism is in place.
   *
   * Stopping the infinite stream could be done by adding a call to a service that would return
-  * a flag to tell if a stop if requested (code to be provided)
+  * a flag to tell if a stop is requested (code to be provided)
   *
   * Some help about how to use getAsyncCallback was found here:
   * http://doc.akka.io/docs/akka/current/scala/stream/stream-customize.html
@@ -28,7 +28,7 @@ import scala.util.{Failure, Success, Try}
   *
   */
 class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: PriceScraperUrlService,
-                                          priceScraperWebsites: Seq[PriceScraperWebsite],
+                                          priceScraperWebsite: PriceScraperWebsite,
                                           ec: ExecutionContext)
   extends GraphStage[SourceShape[PriceScraperUrl]] {
 
@@ -80,7 +80,7 @@ class PriceScraperUrlGraphStage @Inject()(implicit priceScraperUrlService: Price
       override def onPull(): Unit = {
         // Check if an update of the url list is needed
         if (needsUpdate(lastUpdate)) {
-          priceScraperUrlService.findPriceScraperUrlsAndParameters(priceScraperWebsites).onComplete(safePushCallback(true).invoke)
+          priceScraperUrlService.findPriceScraperUrlsAndParameters(priceScraperWebsite).onComplete(safePushCallback(true).invoke)
         } else {
           pushNextUrl()
         }

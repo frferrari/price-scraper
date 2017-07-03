@@ -8,8 +8,8 @@ import akka.http.scaladsl.model.{HttpRequest, Uri}
 import akka.stream.stage._
 import akka.stream.{ActorMaterializerSettings, _}
 import akka.util.ByteString
-import com.andycot.pricescraper.business.{PriceScraperDCP, ResourceUnavailable}
-import com.andycot.pricescraper.models.{PriceScraperAuction, PriceScraperUrl, PriceScraperUrlContent, PriceScraperWebsite}
+import com.andycot.pricescraper.business.{PriceScraperExtractor, ResourceUnavailable}
+import com.andycot.pricescraper.models.{PriceScraperAuction, PriceScraperUrlContent, PriceScraperWebsite}
 import com.andycot.pricescraper.services.{PriceScraperAuctionService, PriceScraperUrlService}
 import play.api.Logger
 
@@ -21,7 +21,8 @@ import scala.util.{Failure, Success, Try}
   * Created by Francois FERRARI on 10/06/2017
   */
 class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlService: PriceScraperUrlService,
-                                               priceScraperWebsites: Seq[PriceScraperWebsite],
+                                               priceScraperWebsite: PriceScraperWebsite,
+                                               priceScraperExtractor: PriceScraperExtractor,
                                                priceScraperAuctionService: PriceScraperAuctionService,
                                                ec: ExecutionContext)
   extends GraphStage[FlowShape[PriceScraperUrlContent, PriceScraperAuction]] {
@@ -41,33 +42,19 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
 
         grab(in) match {
           case PriceScraperUrlContent(priceScraperUrl, Some(htmlContent)) =>
-            getPriceScraperWebsite(priceScraperUrl.website) match {
-              case Some(priceScraperWebsite) =>
-                Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} URL ${priceScraperUrl.url} w/htmlContent")
-                (for {
-                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, priceScraperUrl, htmlContent)
-                  alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
-                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, priceScraperUrl.url).invoke)
-
-              case None =>
-                Logger.error(s"Unknown WEBSITE ${priceScraperUrl.website} for URL ${priceScraperUrl.url} w/htmlContent")
-                maybePullIn()
-            }
+            Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} URL ${priceScraperUrl.url} w/htmlContent")
+            (for {
+              auctions <- priceScraperExtractor.extractAuctions(priceScraperWebsite, priceScraperUrl, htmlContent)
+              alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
+            } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, priceScraperUrl.url).invoke)
 
           case PriceScraperUrlContent(priceScraperUrl, None) =>
-            getPriceScraperWebsite(priceScraperUrl.website) match {
-              case Some(priceScraperWebsite) =>
-                Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} URL ${priceScraperUrl.url} w/o htmlContent")
-                (for {
-                  htmlContent <- getHtmlContent(priceScraperUrl.url)
-                  auctions <- PriceScraperDCP.extractAuctions(priceScraperWebsite, priceScraperUrl, htmlContent)
-                  alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
-                } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, priceScraperUrl.url).invoke)
-
-              case None =>
-                Logger.error(s"Unknown WEBSITE ${priceScraperUrl.website} for URL ${priceScraperUrl.url} w/o htmlContent")
-                maybePullIn()
-            }
+            Logger.info(s"Processing WEBSITE ${priceScraperUrl.website} URL ${priceScraperUrl.url} w/o htmlContent")
+            (for {
+              htmlContent <- getHtmlContent(priceScraperUrl.url)
+              auctions <- priceScraperExtractor.extractAuctions(priceScraperWebsite, priceScraperUrl, htmlContent)
+              alreadyRecordedAuctions <- priceScraperAuctionService.findMany(auctions)
+            } yield (auctions, alreadyRecordedAuctions)).onComplete(processHtmlContentCallback(priceScraperWebsite, priceScraperUrl.url).invoke)
         }
       }
 
@@ -202,15 +189,5 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
     def getNewAuctions(auctions: Seq[PriceScraperAuction], alreadyRecordedAuctions: Seq[PriceScraperAuction]): Seq[PriceScraperAuction] = {
       auctions.filterNot(auction => alreadyRecordedAuctions.exists(_.auctionId == auction.auctionId))
     }
-
-
-    /**
-      * Finds a PriceScraperWebsite from a website
-      *
-      * @param website
-      * @return A Some(PriceScraperWebsite) for an existing website
-      *         A None when the website was not found
-      */
-    def getPriceScraperWebsite(website: String): Option[PriceScraperWebsite] = priceScraperWebsites.find(_.website == website)
   }
 }

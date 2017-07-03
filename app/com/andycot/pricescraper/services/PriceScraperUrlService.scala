@@ -5,6 +5,7 @@ import javax.inject.Inject
 import com.andycot.pricescraper.models.{PriceScraperUrl, PriceScraperWebsite}
 import com.andycot.pricescraper.utils.{MongoPriceScraperUrlCollection, PriceScraperUrlManager}
 import org.mongodb.scala.{Completed, MongoCollection}
+import org.mongodb.scala.model.Filters._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -24,15 +25,17 @@ class PriceScraperUrlService @Inject()(psuc: MongoPriceScraperUrlCollection) {
 
   /**
     *
-    * @param priceScraperWebsites
+    * @param priceScraperWebsite
     * @return
     */
-  def findPriceScraperUrlsAndParameters(priceScraperWebsites: Seq[PriceScraperWebsite]): Future[Seq[PriceScraperUrl]] =
-    collection.find().toFuture().map {
-      _.flatMap { priceScraperUrl =>
-        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsites, 1)
+  def findPriceScraperUrlsAndParameters(priceScraperWebsite: PriceScraperWebsite): Future[Seq[PriceScraperUrl]] =
+    collection
+      .find(equal("website", priceScraperWebsite.website)).toFuture()
+      .map {
+        _.flatMap { priceScraperUrl =>
+          PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsite, 1)
+        }
       }
-    }
 
   /**
     * Inserts an Url in MongoDB

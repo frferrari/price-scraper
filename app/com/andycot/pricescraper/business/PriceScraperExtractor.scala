@@ -15,7 +15,7 @@ trait PriceScraperExtractor {
 
   def extractAuctionInformations(priceScraperAuction: PriceScraperAuction, htmlContent: String): PriceScraperAuction
 
-  def getPagedUrls(priceCrawlerUrl: PriceScraperUrl, priceCrawlerWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[PriceScraperUrl]
+  def getPagedUrls(priceCrawlerUrl: PriceScraperUrl, priceCrawlerWebsite: PriceScraperWebsite, htmlContent: String): Seq[PriceScraperUrl]
 
   def getAuctionPrice(priceWithCurrency: String): Try[PriceScraperAuctionPrice]
 
@@ -37,7 +37,7 @@ trait PriceScraperExtractor {
         guessValidYear(string, validYearBounded(priceScraperYearRange))
 
       case None =>
-        guessValidYear(string, validYearGeneral)
+        guessValidYear(string, validYearCommonCase)
     }
   }
 
@@ -48,6 +48,8 @@ trait PriceScraperExtractor {
     * @return
     */
   def guessValidYear(string: String, validYear: Int => Boolean): Option[PriceScraperYearRange] = Try {
+    // A regex that allows to match for year values ranging from 1700 to 2099, this values can't be surrounded
+    // by other similar values thanks to the \\b token
     val yearRegex = "\\b(17|18|19|20)\\d{2}\\b".r
 
     yearRegex.findAllIn(string).toList.map(_.toInt).filter(validYear) match {
@@ -67,7 +69,7 @@ trait PriceScraperExtractor {
     * @param year The year to check for validity
     * @return
     */
-  def validYearGeneral(year: Int): Boolean = {
+  def validYearCommonCase(year: Int): Boolean = {
     // TODO Move to config file or make it dependent on the familyId (postcards may have a minimum year lower then stamps)
     year >= 1700 && year <= LocalDate.now().plusYears(1).getYear
   }

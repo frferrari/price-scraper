@@ -10,7 +10,7 @@ import akka.http.scaladsl.model.{HttpRequest, Uri}
 import akka.stream._
 import akka.stream.scaladsl.{Flow, Framing, Source}
 import akka.util.ByteString
-import com.andycot.pricescraper.business.{PriceScraperDCP, ResourceUnavailable}
+import com.andycot.pricescraper.business.{PriceScraperDCP, PriceScraperExtractor, ResourceUnavailable}
 import com.andycot.pricescraper.models._
 import com.andycot.pricescraper.streams.{PriceScraperAuctionsGraphStage, PriceScraperUrlGraphStage}
 import org.jsoup.Jsoup
@@ -109,10 +109,10 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       * ...
       * http://www.andycot.fr/...&page=26
       */
-    def generatePagedUrlsFromBaseUrl(priceScraperWebsites: Seq[PriceScraperWebsite]): Flow[BasePriceScraperUrlWithHtmlContent, Seq[PriceScraperUrlContent], NotUsed] =
+    def generatePagedUrlsFromBaseUrl(priceScraperWebsite: PriceScraperWebsite, priceScraperExtractor: PriceScraperExtractor): Flow[BasePriceScraperUrlWithHtmlContent, Seq[PriceScraperUrlContent], NotUsed] =
       Flow[BasePriceScraperUrlWithHtmlContent].map {
         case (priceScraperUrl, htmlContent) if priceScraperUrl.website == PriceScraperWebsite.DCP =>
-          val priceScraperUrlContents = PriceScraperDCP.getPagedUrls(priceScraperUrl, priceScraperWebsites, htmlContent).foldLeft(Seq.empty[PriceScraperUrlContent]) {
+          val priceScraperUrlContents = priceScraperExtractor.getPagedUrls(priceScraperUrl, priceScraperWebsite, htmlContent).foldLeft(Seq.empty[PriceScraperUrlContent]) {
             case (acc, psu) if acc.isEmpty =>
               acc :+ PriceScraperUrlContent(psu, Some(htmlContent))
 
@@ -129,7 +129,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
     /**
       * Fetches the content of auction pages and scraps informations to update the auction
       */
-    val fetchAuctionInformations: Flow[PriceScraperAuction, PriceScraperAuction, NotUsed] =
+    def fetchAuctionInformations(priceScraperExtractor: PriceScraperExtractor): Flow[PriceScraperAuction, PriceScraperAuction, NotUsed] =
       Flow[PriceScraperAuction].mapAsync[PriceScraperAuction](numberOfAuctionsFetchedInParallel) { priceScraperAuction =>
         Logger.info(s"Processing WEBSITE ${priceScraperAuction.website} auctionId ${priceScraperAuction.auctionId} url ${priceScraperAuction.auctionUrl}")
 
@@ -146,7 +146,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
 
         htmlContentF.map {
           case htmlContent if priceScraperAuction.website == PriceScraperWebsite.DCP =>
-            PriceScraperDCP.extractAuctionInformations(priceScraperAuction, htmlContent)
+            priceScraperExtractor.extractAuctionInformations(priceScraperAuction, htmlContent)
 
           case _ =>
             Logger.info(s"fetchAuctionInformations: Unknown website ${priceScraperAuction.website}, won't scrap auctionInformations")
@@ -154,21 +154,68 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
         }
       }
 
+    //    Source
+    //      .fromFuture(priceScraperWebsiteService.findAll)
+    //      .flatMapConcat(websites =>
+    //        Source
+    //          .fromIterator(() => websites.toIterator)
+    //          .map(website => Seq(website))
+    //            .via(getHtmlContentFromBaseUrl)
+    //      )
+
+    val withPriceScraperExtractor: PartialFunction[PriceScraperWebsite, (PriceScraperWebsite, PriceScraperExtractor)] = {
+      case priceScraperWebsite if priceScraperWebsite.website == "DCP" =>
+        (priceScraperWebsite, PriceScraperDCP)
+    }
+
+    Source
+      .fromFuture(priceScraperWebsiteService.findAll)
+      .expand(_.toIterator)
+      .collect(withPriceScraperExtractor)
+      .mapAsync(4) { case (priceScraperWebsite, priceScraperExtractor) =>
+        implicit val priceScraperWebsiteImplicit = priceScraperWebsite
+        implicit val priceScraperExtractorImplicit = priceScraperExtractor
+        Logger.info(s"Scraping website ${priceScraperWebsite.website}")
+
+        val priceScraperUrlGraphStage: Graph[SourceShape[PriceScraperUrl], NotUsed] = new PriceScraperUrlGraphStage
+        val priceScraperUrlsFlow: Source[PriceScraperUrl, NotUsed] = Source.fromGraph(priceScraperUrlGraphStage)
+
+        val priceScraperAuctionsGraphStage: PriceScraperAuctionsGraphStage = new PriceScraperAuctionsGraphStage
+        val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
+
+        priceScraperUrlsFlow
+          //        .throttle(1, imNotARobot(1000, 2000), 1, ThrottleMode.Shaping)
+          .via(getHtmlContentFromBaseUrl)
+          .via(generatePagedUrlsFromBaseUrl(priceScraperWebsite, priceScraperExtractor))
+          .flatMapConcat(urls =>
+            Source
+              .fromIterator(() => urls.toIterator)
+              .throttle(1, imNotARobot(200, 4000), 1, ThrottleMode.Shaping)
+              .via(priceScraperAuctionsFlow)
+          )
+          .throttle(1, imNotARobot(400, 600), 1, ThrottleMode.Shaping)
+          .via(fetchAuctionInformations(priceScraperExtractor))
+          .map { auction =>
+            priceScraperAuctionService.createOne(auction).recover {
+              case NonFatal(e) => Logger.error("MongoDB persistence error", e)
+            }
+            auction
+          }
+          .runForeach(printOut)
+      }
+      .runForeach(println)
+
     /*
      * Let's go scraping
      */
+    /*
     priceScraperWebsiteService.findAll.map { implicit priceScraperWebsites =>
       /*
        * Flows & Custom Graph Stages
        */
-      val priceScraperUrlGraphStage: Graph[SourceShape[PriceScraperUrl], NotUsed] = new PriceScraperUrlGraphStage
-      val priceScraperUrlsFlow: Source[PriceScraperUrl, NotUsed] = Source.fromGraph(priceScraperUrlGraphStage)
-
-      val priceScraperAuctionsGraphStage: PriceScraperAuctionsGraphStage = new PriceScraperAuctionsGraphStage
-      val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
 
       priceScraperUrlsFlow
-//        .throttle(1, imNotARobot(1000, 2000), 1, ThrottleMode.Shaping)
+        //        .throttle(1, imNotARobot(1000, 2000), 1, ThrottleMode.Shaping)
         .via(getHtmlContentFromBaseUrl)
         .via(generatePagedUrlsFromBaseUrl(priceScraperWebsites))
         .flatMapConcat(urls =>
@@ -190,6 +237,7 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       case NonFatal(e) =>
         Logger.error("Error reading website parameters", e)
     }
+    */
 
     ()
   }
