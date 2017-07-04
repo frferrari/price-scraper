@@ -76,8 +76,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
 
           val yearRange: Option[PriceScraperYearRange] = priceScraperUrl.familyId match {
             case PriceScraperAuction.FAMILY_STAMP =>
-              // TODO Make this dependent of the Website
-              PriceScraperDCP.guessYear(auctionTitle, priceScraperUrl.yearRange)
+              guessYear(auctionTitle, priceScraperUrl.yearRange)
 
             case _ =>
               None
@@ -134,20 +133,20 @@ object PriceScraperDCP extends PriceScraperExtractor {
   /**
     *
     * @param priceScraperUrl
-    * @param priceScraperWebsites
+    * @param priceScraperWebsite
     * @param htmlContent
     * @return
     */
-  override def getPagedUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], htmlContent: String): Seq[PriceScraperUrl] = {
+  override def getPagedUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsite: PriceScraperWebsite, htmlContent: String): Seq[PriceScraperUrl] = {
     val pageNumberRegex = """.*<a class="pag-number.*" href=".*">([0-9]+)</a>.*""".r
 
     pageNumberRegex.findAllIn(htmlContent).matchData.flatMap(_.subgroups).toList.lastOption match {
       case Some(lastPageNumber) =>
-        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsites, lastPageNumber.toInt)
+        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsite, lastPageNumber.toInt)
 
       case None =>
         // Case when there's only one page of auctions for this category
-        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsites, 1)
+        PriceScraperUrlManager.generateAllUrls(priceScraperUrl, priceScraperWebsite, 1)
     }
   }
 

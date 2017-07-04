@@ -16,10 +16,8 @@ object PriceScraperUrlManager {
     * @param maxPageNumber
     * @return
     */
-  def generateAllUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsites: Seq[PriceScraperWebsite], maxPageNumber: Int): Seq[PriceScraperUrl] = {
-    priceScraperWebsites.find(_.website == priceScraperUrl.website).map { priceScraperWebsite =>
-      (1 to maxPageNumber).map(generateUrl(priceScraperUrl, priceScraperWebsite.defaultQueryParameters)).toList
-    }.getOrElse(Nil)
+  def generateAllUrls(priceScraperUrl: PriceScraperUrl, priceScraperWebsite: PriceScraperWebsite, maxPageNumber: Int): Seq[PriceScraperUrl] = {
+    (1 to maxPageNumber).map(generateUrl(priceScraperUrl, priceScraperWebsite.defaultQueryParameters)).toList
   }
 
   /**
