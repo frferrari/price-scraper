@@ -1,29 +1,23 @@
 package com.andycot.pricescraper.services
 
-import java.util
 import javax.inject._
 
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{HttpRequest, Uri}
+import akka.http.scaladsl.model.HttpRequest
 import akka.stream._
 import akka.stream.scaladsl.{Flow, Framing, Source}
 import akka.util.ByteString
 import com.andycot.pricescraper.business.{PriceScraperDCP, PriceScraperExtractor, ResourceUnavailable}
 import com.andycot.pricescraper.models._
 import com.andycot.pricescraper.streams.{PriceScraperAuctionsGraphStage, PriceScraperUrlGraphStage}
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 import play.api.Logger
 import play.api.inject.ApplicationLifecycle
 
-import scala.annotation.tailrec
 import scala.concurrent.duration.{FiniteDuration, _}
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.control.NonFatal
-import scala.util.matching.Regex
 
 /**
   * Created by Francois FERRARI on 20/06/2017
@@ -48,12 +42,14 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
     Future.successful(())
   }
 
+  //
+  //
+  //
   startScraping()
 
-  /**
-    *
-    * @return
-    */
+  //
+  //
+  //
   def startScraping(): Unit = {
     /*
      * http://doc.akka.io/docs/akka-http/current/scala/http/client-side/request-level.html
@@ -154,33 +150,27 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
         }
       }
 
-    //    Source
-    //      .fromFuture(priceScraperWebsiteService.findAll)
-    //      .flatMapConcat(websites =>
-    //        Source
-    //          .fromIterator(() => websites.toIterator)
-    //          .map(website => Seq(website))
-    //            .via(getHtmlContentFromBaseUrl)
-    //      )
-
     val withPriceScraperExtractor: PartialFunction[PriceScraperWebsite, (PriceScraperWebsite, PriceScraperExtractor)] = {
       case priceScraperWebsite if priceScraperWebsite.website == "DCP" =>
         (priceScraperWebsite, PriceScraperDCP)
     }
+
+    /*
+     * Let's start scraping
+     */
 
     Source
       .fromFuture(priceScraperWebsiteService.findAll)
       .expand(_.toIterator)
       .collect(withPriceScraperExtractor)
       .mapAsync(4) { case (priceScraperWebsite, priceScraperExtractor) =>
-        implicit val priceScraperWebsiteImplicit = priceScraperWebsite
-        implicit val priceScraperExtractorImplicit = priceScraperExtractor
+
         Logger.info(s"Scraping website ${priceScraperWebsite.website}")
 
-        val priceScraperUrlGraphStage: Graph[SourceShape[PriceScraperUrl], NotUsed] = new PriceScraperUrlGraphStage
+        val priceScraperUrlGraphStage: Graph[SourceShape[PriceScraperUrl], NotUsed] = new PriceScraperUrlGraphStage(priceScraperWebsite)
         val priceScraperUrlsFlow: Source[PriceScraperUrl, NotUsed] = Source.fromGraph(priceScraperUrlGraphStage)
 
-        val priceScraperAuctionsGraphStage: PriceScraperAuctionsGraphStage = new PriceScraperAuctionsGraphStage
+        val priceScraperAuctionsGraphStage: PriceScraperAuctionsGraphStage = new PriceScraperAuctionsGraphStage(priceScraperWebsite, priceScraperExtractor)
         val priceScraperAuctionsFlow: Flow[PriceScraperUrlContent, PriceScraperAuction, NotUsed] = Flow.fromGraph(priceScraperAuctionsGraphStage)
 
         priceScraperUrlsFlow
@@ -205,47 +195,14 @@ class PriceScraperImpl @Inject()(implicit priceScraperUrlService: PriceScraperUr
       }
       .runForeach(println)
 
-    /*
-     * Let's go scraping
-     */
-    /*
-    priceScraperWebsiteService.findAll.map { implicit priceScraperWebsites =>
-      /*
-       * Flows & Custom Graph Stages
-       */
-
-      priceScraperUrlsFlow
-        //        .throttle(1, imNotARobot(1000, 2000), 1, ThrottleMode.Shaping)
-        .via(getHtmlContentFromBaseUrl)
-        .via(generatePagedUrlsFromBaseUrl(priceScraperWebsites))
-        .flatMapConcat(urls =>
-          Source
-            .fromIterator(() => urls.toIterator)
-            .throttle(1, imNotARobot(200, 4000), 1, ThrottleMode.Shaping)
-            .via(priceScraperAuctionsFlow)
-        )
-        .throttle(1, imNotARobot(400, 600), 1, ThrottleMode.Shaping)
-        .via(fetchAuctionInformations)
-        .map { auction =>
-          priceScraperAuctionService.createOne(auction).recover {
-            case NonFatal(e) => Logger.error("MongoDB persistence error", e)
-          }
-          auction
-        }
-        .runForeach(printOut)
-    }.recover {
-      case NonFatal(e) =>
-        Logger.error("Error reading website parameters", e)
-    }
-    */
-
     ()
   }
 
   /**
+    * Allows to pause the scraping process not to send too many requests to a website
     *
-    * @param base
-    * @param range
+    * @param base The minimum pause value
+    * @param range A random value added to the base value
     * @return
     */
   def imNotARobot(base: Int, range: Int): FiniteDuration = {

@@ -20,9 +20,9 @@ import scala.util.{Failure, Success, Try}
 /**
   * Created by Francois FERRARI on 10/06/2017
   */
-class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlService: PriceScraperUrlService,
-                                               priceScraperWebsite: PriceScraperWebsite,
-                                               priceScraperExtractor: PriceScraperExtractor,
+class PriceScraperAuctionsGraphStage @Inject()(priceScraperWebsite: PriceScraperWebsite,
+                                               priceScraperExtractor: PriceScraperExtractor)
+                                              (implicit val priceScraperUrlService: PriceScraperUrlService,
                                                priceScraperAuctionService: PriceScraperAuctionService,
                                                ec: ExecutionContext)
   extends GraphStage[FlowShape[PriceScraperUrlContent, PriceScraperAuction]] {
@@ -171,7 +171,7 @@ class PriceScraperAuctionsGraphStage @Inject()(implicit val priceScraperUrlServi
       *         false if no auction was pushed
       */
     def pushNextAuction(): Boolean = {
-      if (priceScraperAuctions.nonEmpty) {
+      if (priceScraperAuctions.nonEmpty && isAvailable(out)) {
         push(out, priceScraperAuctions.dequeue)
         true
       } else {
