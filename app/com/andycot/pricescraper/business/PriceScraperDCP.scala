@@ -222,7 +222,8 @@ object PriceScraperDCP extends PriceScraperExtractor {
     * @param startedAtInfo A text containing the started at information
     */
   def extractStartedAtText(startedAtInfo: String): (String, Int) = {
-    val startedAtRegex = ".*vente[^A-Za-z]+([A-Za-z]+ [0-9]+ [^ ]+ [0-9]+).*([0-9]{2}:[0-9]{2}) ([0-9]+) visite.*".r
+    // val startedAtRegex = ".*vente[^A-Za-z]+([A-Za-z]+ [0-9]+ [^ ]+ [0-9]+).*([0-9]{2}:[0-9]{2}) ([0-9]+) visite.*".r
+    val startedAtRegex = ".*vente[^A-Za-z]+([A-Za-z]+ [0-9]+ [^ ]+ [0-9]+).*([0-9]{2}:[0-9]{2})[^0-9]+([0-9]+) visite.*".r
     val startedAtRegex(startedAtDate, startedAtTime, visitCount) = startedAtInfo
 
     (s"$startedAtDate $startedAtTime", visitCount.toInt)
@@ -234,7 +235,7 @@ object PriceScraperDCP extends PriceScraperExtractor {
     * @param soldAtInfo A text containing the soldAt information
     */
   def extractSoldAtText(soldAtInfo: String): String = {
-    val soldAtRegex = "Vendue le ([A-ZA-z]+ [0-9]+ [^ ]+ [0-9]{4} [0-9]{2}:[0-9]{2})".r
+    val soldAtRegex = "Vendue le ([A-ZA-z]+ [0-9]+ [^ ]+ [0-9]{4} [0-9]{2}:[0-9]{2}).*".r
     val soldAtRegex(soldAtText) = soldAtInfo
 
     soldAtText
