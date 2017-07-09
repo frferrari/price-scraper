@@ -16,18 +16,16 @@ class PriceScraperUrlManagerSpec
   "PriceScraperUrlManager" should {
     "generate 4 urls given a" in {
       val priceScraperBaseUrl = PriceScraperUrl("andycot", stampBaseUrl, 1, Some(250), None, None, Nil)
-      val priceScraperWebsites = List(
-        PriceScraperWebsite(
-          "andycot",
-          stampBaseUrl,
-          canSortByAuctionEndDate = false,
-          List(
-            PriceScraperQueryParameter("sort", "1"), PriceScraperQueryParameter("size", "120")
-          )
+      val priceScraperWebsite = PriceScraperWebsite(
+        "andycot",
+        stampBaseUrl,
+        canSortByAuctionEndDate = false,
+        List(
+          PriceScraperQueryParameter("sort", "1"), PriceScraperQueryParameter("size", "120")
         )
       )
 
-      PriceScraperUrlManager.generateAllUrls(priceScraperBaseUrl, priceScraperWebsites, 4) shouldBe Nil
+      PriceScraperUrlManager.generateAllUrls(priceScraperBaseUrl, priceScraperWebsite, 4) shouldBe Nil
     }
   }
 }

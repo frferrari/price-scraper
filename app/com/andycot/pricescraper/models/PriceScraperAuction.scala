@@ -29,7 +29,7 @@ case class PriceScraperAuction(auctionId: String,
                                soldAt: Option[Instant] = None,
                                createdAt: Instant = Instant.now(),
                                checkedAt: Option[Instant] = None,
-                               checkedStatus: Option[Int] = None
+                               checkedStatus: Int = PriceScraperAuction.UNCHECKED_STATUS
                               )
 
 object PriceScraperAuction {
@@ -38,6 +38,14 @@ object PriceScraperAuction {
 
   val FAMILY_STAMP = 1
 
+  val UNCHECKED_STATUS = 10
+  val CHECKECD_REJECTED_STATUS = 20
+  val CHECKED_UNMATCHED_STATUS = 30
+  val CHECKED_MATCHED_STATUS = 40
+
+  /*
+   * Version of the object
+   */
   private val versions = Seq(
     ("1.0", "initial version")
   )
